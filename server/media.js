@@ -8,7 +8,9 @@ const { run, limiter } = require('./util');
 const { PHOTO } = require('./formats');
 const { jpegOrientation, resetJpegOrientation } = require('./exif');
 
-const THUMB_SIZE = 480;
+const THUMB_SIZES = [480, 960, 1280];
+const PHOTO_WIDTHS = [640, 1280, 1920, 2560, 3840];
+const QUICKLOOK_TIMEOUT_MS = 5000;
 const RETRY_AFTER_MS = 10 * 60 * 1000;
 
 function exists(file) {
@@ -38,6 +40,7 @@ class Media {
     this.tmpDir = path.join(opts.cacheDir, 'tmp');
     this.thumbLimit = limiter(2);   // contract: at most 2 thumbnail jobs at once
     this.photoLimit = limiter(2);
+    this.quickLookLimit = limiter(1);
     this.inflight = new Map();      // cache file -> promise
     this.failed = new Map();        // cache file -> time of last failure
     try {
@@ -84,7 +87,9 @@ class Media {
     const dir = path.dirname(file), id = path.basename(file).slice(0, 12), stamp = path.basename(file).split(/[-.]/)[1];
     try {
       fs.readdirSync(dir).forEach(function (n) {
-        if (n.startsWith(id + '-') && n.split(/[-.]/)[1] !== stamp) { try { fs.unlinkSync(path.join(dir, n)); } catch (e) { /* ignore */ } }
+        const parts = n.split(/[-.]/);
+        // older file version, or the pre-sizes naming "<id>-<mtime>.jpg"
+        if (n.startsWith(id + '-') && (parts[1] !== stamp || parts.length === 3)) { try { fs.unlinkSync(path.join(dir, n)); } catch (e) { /* ignore */ } }
       });
     } catch (e) { /* ignore */ }
   }
@@ -101,12 +106,10 @@ class Media {
 
   // ---- sips ----------------------------------------------------------------
 
-  async dims(rec) {
-    if (rec.meta && rec.width && rec.height) {
-      // rec.width/height are upright; sips works on the stored (unrotated) pixels, but only the longer side matters here.
-      return Math.max(rec.width, rec.height);
-    }
-    const r = await run(this.tools.sips, ['-g', 'pixelWidth', '-g', 'pixelHeight', rec.path], { timeout: 20000 });
+  // Longest side of the stored image, 0 when unknown.
+  async dims(rec, file) {
+    if (rec.meta && rec.width && rec.height) return Math.max(rec.width, rec.height);
+    const r = await run(this.tools.sips, ['-g', 'pixelWidth', '-g', 'pixelHeight', file], { timeout: 20000 });
     const w = /pixelWidth:\s*(\d+)/.exec(r.stdout), h = /pixelHeight:\s*(\d+)/.exec(r.stdout);
     return w && h ? Math.max(+w[1], +h[1]) : 0;
   }
@@ -133,33 +136,42 @@ class Media {
 
   // ---- thumbnails ----------------------------------------------------------
 
-  thumb(rec) {
-    const file = path.join(this.thumbDir, rec.id + '-' + rec.mtime + '.jpg');
-    return this.cached(file, this.thumbLimit, (tmp) => (rec.kind === 'video' ? this.videoThumb(rec, tmp) : this.photoThumb(rec, tmp)));
+  // `file` is the checked, real location of the item; `size` one of THUMB_SIZES.
+  thumb(rec, size, file) {
+    const out = path.join(this.thumbDir, rec.id + '-' + rec.mtime + '-' + size + '.jpg');
+    let limit = this.thumbLimit;
+    if (rec.kind === 'video' && !this.tools.ffmpeg) {
+      // Quick Look can be slow on broken files: let it use one of the two slots at most.
+      limit = (fn) => this.quickLookLimit(() => this.thumbLimit(fn));
+    }
+    return this.cached(out, limit, (tmp) => (rec.kind === 'video' ? this.videoThumb(rec, file, size, tmp) : this.photoThumb(rec, file, size, tmp)));
   }
 
-  async photoThumb(rec, tmp) {
+  async photoThumb(rec, file, size, tmp) {
     if (!this.tools.sips) return false;
-    return this.toJpeg(rec.path, tmp, await this.dims(rec), THUMB_SIZE, 80);
+    return this.toJpeg(file, tmp, await this.dims(rec, file), size, size > 480 ? 84 : 80);
   }
 
-  async videoThumb(rec, tmp) {
+  async videoThumb(rec, file, size, tmp) {
     if (this.tools.ffmpeg) {
+      // Longest side at most `size`, never enlarged, even dimensions.
+      const scale = "scale='if(gte(iw,ih),trunc(min(" + size + ",iw)/2)*2,-2)':'if(gte(iw,ih),-2,trunc(min(" + size + ",ih)/2)*2)'";
       const at = rec.duration > 0 ? rec.duration * 0.1 : 3;
       for (const t of at > 0.5 ? [at, 0] : [0]) {
-        await run(this.tools.ffmpeg, ['-nostdin', '-loglevel', 'error', '-ss', t.toFixed(2), '-i', rec.path, '-an', '-sn', '-frames:v', '1',
-          '-vf', 'scale=' + THUMB_SIZE + ':-2', '-q:v', '5', '-f', 'image2', '-y', tmp], { timeout: 30000 });
+        await run(this.tools.ffmpeg, ['-nostdin', '-loglevel', 'error', '-ss', t.toFixed(2), '-i', file, '-an', '-sn', '-frames:v', '1',
+          '-vf', scale, '-q:v', size > 480 ? '3' : '5', '-f', 'image2', '-y', tmp], { timeout: 20000 });
         if (exists(tmp)) return true;
       }
+      return false; // a file ffmpeg cannot read is not worth a second, slower attempt
     }
     if (this.tools.qlmanage && this.tools.sips) {
       const dir = this.tmp('');
       try {
         await fsp.mkdir(dir, { recursive: true });
-        await run(this.tools.qlmanage, ['-t', '-s', String(THUMB_SIZE), '-o', dir, rec.path], { timeout: 30000 });
+        await run(this.tools.qlmanage, ['-t', '-s', String(size), '-o', dir, file], { timeout: QUICKLOOK_TIMEOUT_MS });
         const png = (await fsp.readdir(dir)).find(function (n) { return /\.png$/i.test(n); });
         if (!png) return false;
-        return await this.toJpeg(path.join(dir, png), tmp, THUMB_SIZE, THUMB_SIZE, 80);
+        return await this.toJpeg(path.join(dir, png), tmp, 0, size, 80);
       } finally {
         fsp.rm(dir, { recursive: true, force: true }).catch(function () {});
       }
@@ -170,16 +182,27 @@ class Media {
   // ---- full-size photos for the TV ------------------------------------------
 
   // Resolves { file, type } to send, or null when nothing usable can be produced.
-  async photo(rec, w) {
+  async photo(rec, w, file) {
     const native = PHOTO[rec.ext] && PHOTO[rec.ext].native;
-    const original = { file: rec.path, type: PHOTO[rec.ext] ? PHOTO[rec.ext].mime : 'application/octet-stream', original: true };
+    const original = { file: file, type: PHOTO[rec.ext] ? PHOTO[rec.ext].mime : 'application/octet-stream', original: true };
     if (rec.ext === 'gif') return original; // keep animations moving
     if (!this.tools.sips) return native ? original : null;
-    const file = path.join(this.photoDir, rec.id + '-' + rec.mtime + '-' + w + '.jpg');
-    const made = await this.cached(file, this.photoLimit, async (tmp) => this.toJpeg(rec.path, tmp, await this.dims(rec), w, 88));
+    const out = path.join(this.photoDir, rec.id + '-' + rec.mtime + '-' + w + '.jpg');
+    const made = await this.cached(out, this.photoLimit, async (tmp) => this.toJpeg(file, tmp, await this.dims(rec, file), w, 88));
     if (made) return { file: made, type: 'image/jpeg' };
     return native ? original : null;
   }
 }
 
-module.exports = { Media, placeholderSvg };
+// Snap a requested size up to the nearest allowed one (the largest when it asks for more).
+function snap(value, sizes, fallback) {
+  const n = parseInt(value, 10);
+  if (!(n > 0)) return fallback;
+  for (const s of sizes) if (n <= s) return s;
+  return sizes[sizes.length - 1];
+}
+
+function thumbSize(value) { return snap(value, THUMB_SIZES, THUMB_SIZES[0]); }
+function photoWidth(value) { return snap(value, PHOTO_WIDTHS, 1920); }
+
+module.exports = { Media, placeholderSvg, thumbSize, photoWidth, THUMB_SIZES, PHOTO_WIDTHS };

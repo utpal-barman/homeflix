@@ -182,7 +182,8 @@ function parseRange(header, size) {
     start = parseInt(m[1], 10);
     end = m[2] === '' ? size - 1 : Math.min(parseInt(m[2], 10), size - 1);
   }
-  if (!(start >= 0) || start >= size || end < start) return 'invalid';
+  if (!(start >= 0) || start >= size) return 'invalid';
+  if (end < start) return null; // "bytes=5-2" is not a valid range: ignore it and send everything
   return { start: start, end: end };
 }
 
@@ -194,7 +195,7 @@ function sendFile(req, res, file, opts) {
     if (!st) st = fs.statSync(file);
     if (!st.isFile()) throw new Error('not a file');
   } catch (e) {
-    return sendError(req, res, 404, 'not_found', 'That file is no longer there. It may have been moved or deleted.');
+    return sendError(req, res, 404, opts.missingCode || 'not_found', 'That file is no longer there. It may have been moved, renamed or deleted on the Mac.');
   }
   const size = st.size;
   const headers = {

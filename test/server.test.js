@@ -8,7 +8,7 @@ const { startApp, request, tempDir, bytes } = require('./support/helpers');
 
 const ITEM_KEYS = ['id', 'kind', 'title', 'file', 'collection', 'ext', 'size', 'mtime', 'duration', 'width', 'height',
   'playable', 'note', 'hasSubs', 'writable', 'src', 'thumb', 'progress'].sort();
-const STATUS_KEYS = ['name', 'version', 'running', 'port', 'address', 'url', 'altUrls', 'wifiName', 'qrSvg', 'config',
+const STATUS_KEYS = ['libraryError', 'name', 'version', 'running', 'port', 'address', 'url', 'altUrls', 'wifiName', 'qrSvg', 'config',
   'counts', 'tools', 'scanning', 'clients', 'error'].sort();
 
 let h, extra;
@@ -68,7 +68,7 @@ test('GET /api/library has the contract shape', async () => {
     assert.deepEqual(Object.keys(item).sort(), ITEM_KEYS);
     assert.match(item.id, /^[0-9a-f]{12}$/);
     assert.equal(item.src, '/media/' + item.id);
-    assert.equal(item.thumb, '/thumb/' + item.id);
+    assert.equal(item.thumb, '/thumb/' + item.id + '?v=' + item.mtime);
     assert.ok(!JSON.stringify(item).includes(h.home), 'no file system paths leak to clients');
   }
   const movieItem = lib.videos.find((v) => v.file === 'Movie_One.mp4');
@@ -140,6 +140,10 @@ test('GET /media/<id> supports full, ranged and HEAD requests', async () => {
   assert.equal(beyond.status, 206);
   assert.equal(beyond.headers['content-range'], 'bytes 0-999/1000');
 
+  const backwards = await h.control('GET', item.src, { headers: { Range: 'bytes=5-2' } });
+  assert.equal(backwards.status, 200, 'a nonsense range is ignored');
+  assert.ok(backwards.body.equals(movie));
+
   const bad = await h.control('GET', item.src, { headers: { Range: 'bytes=1000-' } });
   assert.equal(bad.status, 416);
   assert.equal(bad.headers['content-range'], 'bytes */1000');
@@ -161,6 +165,11 @@ test('GET /media/<id> supports full, ranged and HEAD requests', async () => {
 
   assert.equal((await h.control('GET', '/media/000000000000')).status, 404);
   assert.equal((await h.control('GET', '/media/not-an-id')).status, 404);
+  for (const p of ['/media/a/b', '/media/' + item.id + '/extra', '/media', '/thumb/a/b/c', '/photo/', '/subs/a/b.vtt']) {
+    const r = await h.control('GET', p);
+    assert.equal(r.status, 404, p);
+    assert.equal(r.json.code, 'not_found', p + ' is JSON, not the app page');
+  }
   assert.equal((await h.control('POST', item.src)).status, 405);
 });
 
@@ -375,8 +384,19 @@ test('control server only answers the local browser', async () => {
   assert.equal(foreignHost.json.code, 'forbidden');
   const foreignOrigin = await h.control('POST', '/api/server/stop', { headers: { Origin: 'http://evil.example.com' } });
   assert.equal(foreignOrigin.status, 403);
-  const sameOrigin = await h.control('POST', '/api/rescan', { headers: { Origin: 'http://localhost:' + h.app.controlPort } });
+  const port = h.app.controlPort;
+  const sameOrigin = await h.control('POST', '/api/rescan', { headers: { Origin: 'http://127.0.0.1:' + port } });
   assert.equal(sameOrigin.status, 200);
+  const viaLocalhost = await h.control('POST', '/api/rescan', { headers: { Host: 'localhost:' + port, Origin: 'http://localhost:' + port } });
+  assert.equal(viaLocalhost.status, 200);
+  // another program's page on this Mac (a different localhost port) is not the control panel
+  for (const origin of ['http://localhost:3000', 'http://127.0.0.1:' + (port + 1), 'http://localhost', 'https://127.0.0.1:' + port, 'null', 'garbage']) {
+    const r = await h.control('POST', '/api/rescan', { headers: { Origin: origin } });
+    assert.equal(r.status, 403, origin);
+    assert.equal(r.json.code, 'forbidden');
+  }
+  assert.equal((await h.control('GET', '/api/status', { headers: { Origin: 'http://localhost:3000' } })).status, 200, 'reads are not affected');
+  assert.equal((await h.control('POST', '/api/rescan')).status, 200, 'no Origin header (curl, same-origin GET forms) is fine');
   assert.equal(h.app.controlPort > 0, true);
 });
 
@@ -397,6 +417,7 @@ test('GET /api/status has the contract shape', async () => {
   assert.equal(typeof s.scanning, 'boolean');
   assert.deepEqual(s.clients, []);
   assert.equal(s.error, null);
+  assert.equal(s.libraryError, null);
   assert.ok(Array.isArray(s.altUrls));
   if (s.address) {
     assert.equal(s.url, 'http://' + s.address + ':' + s.port);
@@ -432,6 +453,21 @@ test('TV server: start/stop toggle, read-only surface, port fallback', async () 
   assert.match((await h.tv('GET', '/')).headers['content-type'], /^text\/html/);
   assert.match((await h.tv('GET', '/some/page')).headers['content-type'], /^text\/html/);
   assert.equal((await h.tv('GET', '/missing.js')).status, 404);
+  const icon = await h.tv('GET', '/favicon.ico');
+  assert.equal(icon.status, 200);
+  assert.equal(icon.headers['content-type'], 'image/svg+xml');
+  assert.equal((await h.tv('GET', '/media/a/b')).status, 404);
+
+  // only answers to its address, localhost or a .local name
+  for (const host of ['192.168.0.106:' + h.tvPort, 'localhost:' + h.tvPort, 'my-mac.local:' + h.tvPort, '[::1]:' + h.tvPort]) {
+    assert.equal((await h.tv('GET', '/api/ping', { headers: { Host: host } })).status, 200, host);
+  }
+  for (const host of ['evil.example.com', 'evil.example.com:' + h.tvPort, 'homeflix.attacker.net']) {
+    const r = await h.tv('GET', '/api/library', { headers: { Host: host } });
+    assert.equal(r.status, 403, host);
+    assert.equal(r.json.code, 'forbidden');
+    assert.equal((await h.tv('PUT', '/api/progress/' + item.id, { headers: { Host: host }, body: { position: 100, duration: 1000 } })).status, 403);
+  }
 
   // progress is the only thing the TV may write
   assert.equal((await h.tv('PUT', '/api/progress/' + item.id, { body: { position: 100, duration: 1000 } })).status, 204);
@@ -482,7 +518,7 @@ test('TV server refuses clients that are not on the home network', async () => {
       end(b) { this.body = b ? b.toString() : ''; resolve(this); },
       on() {}
     };
-    const req = { method: 'GET', url: '/api/ping', headers: { 'user-agent': 'TestTV/1.0' }, socket: { remoteAddress: remoteAddress }, resume() {}, on() {} };
+    const req = { method: 'GET', url: '/api/ping', headers: { 'user-agent': 'TestTV/1.0', host: '192.168.0.106:8080' }, socket: { remoteAddress: remoteAddress }, resume() {}, on() {} };
     h.app._handleTv(req, res);
   });
   for (const addr of ['8.8.8.8', '::ffff:93.184.216.34', '2001:db8::1', '172.32.0.1', '']) {
@@ -634,4 +670,63 @@ test('the folder watcher notices new files on its own', async () => {
     found = await itemByFile('watched.mp4');
   }
   assert.ok(found, 'the new file showed up without a rescan');
+});
+
+test('files that vanish or are swapped for links are never served', async () => {
+  const outside = path.join(h.home, 'config.json'); // exists, but is not in any library folder
+  // a vanished file
+  fs.writeFileSync(path.join(h.lib, 'gone.mp4'), bytes(20));
+  fs.writeFileSync(path.join(h.lib, 'swap.mp4'), bytes(20));
+  fs.writeFileSync(path.join(h.lib, 'swap.jpg'), bytes(20));
+  fs.writeFileSync(path.join(h.lib, 'linked.mp4'), bytes(20));
+  fs.symlinkSync(outside, path.join(h.lib, 'linked.srt')); // subtitle "file" pointing out of the library
+  fs.writeFileSync(path.join(h.lib, 'inner.mp4'), bytes(20));
+  fs.writeFileSync(path.join(h.lib, 'Trip', 'real.vtt'), 'WEBVTT\n');
+  fs.symlinkSync(path.join(h.lib, 'Trip', 'real.vtt'), path.join(h.lib, 'inner.vtt')); // a link that stays inside is fine
+  await h.control('POST', '/api/rescan');
+
+  const gone = await itemByFile('gone.mp4');
+  fs.unlinkSync(path.join(h.lib, 'gone.mp4'));
+  const r = await h.control('GET', gone.src);
+  assert.equal(r.status, 404);
+  assert.equal(r.json.code, 'file_missing');
+  assert.ok(r.json.error.length > 20 && !/ENOENT/.test(r.json.error));
+  assert.equal((await h.control('HEAD', gone.src)).status, 404);
+  const goneThumb = await h.control('GET', gone.thumb);
+  assert.equal(goneThumb.status, 200);
+  assert.equal(goneThumb.headers['content-type'], 'image/svg+xml');
+
+  // subtitles linked from outside are ignored, links inside the library work
+  const linked = await itemByFile('linked.mp4');
+  assert.equal(linked.hasSubs, false);
+  assert.equal((await h.control('GET', '/subs/' + linked.id + '.vtt')).status, 404);
+  const inner = await itemByFile('inner.mp4');
+  assert.equal(inner.hasSubs, true);
+  assert.equal((await h.control('GET', '/subs/' + inner.id + '.vtt')).text, 'WEBVTT\n');
+  // ... until the link is re-pointed after it was indexed
+  fs.unlinkSync(path.join(h.lib, 'inner.vtt'));
+  fs.symlinkSync(outside, path.join(h.lib, 'inner.vtt'));
+  const subs = await h.control('GET', '/subs/' + inner.id + '.vtt');
+  assert.equal(subs.status, 404);
+  assert.ok(!subs.text.includes('port'));
+
+  // an indexed file replaced by a link to somewhere else, before any rescan
+  const secret = fs.readFileSync(outside, 'utf8');
+  for (const name of ['swap.mp4', 'swap.jpg']) {
+    const item = await itemByFile(name);
+    fs.unlinkSync(path.join(h.lib, name));
+    fs.symlinkSync(outside, path.join(h.lib, name));
+    const urls = [item.src, '/photo/' + item.id];
+    for (const url of urls) {
+      const res = await h.control('GET', url);
+      assert.equal(res.status, 404, name + ' ' + url);
+      assert.ok(!res.text.includes(secret.slice(0, 20)));
+    }
+    const thumb = await h.control('GET', item.thumb);
+    assert.equal(thumb.headers['content-type'], 'image/svg+xml');
+    assert.ok(!thumb.text.includes(secret.slice(0, 20)));
+    fs.unlinkSync(path.join(h.lib, name));
+  }
+  fs.unlinkSync(path.join(h.lib, 'linked.srt'));
+  fs.unlinkSync(path.join(h.lib, 'inner.vtt'));
 });

@@ -11,7 +11,8 @@ const { evaluateProgress } = require('../server/progress');
 const { validatePatch } = require('../server/config');
 const { qrMatrix, qrSvg } = require('../server/qr');
 const { playability, kindOf } = require('../server/formats');
-const { parseUrl } = require('../server/app');
+const { parseUrl, tvHostAllowed } = require('../server/app');
+const { thumbSize, photoWidth } = require('../server/media');
 const { titleFor, idFor } = require('../server/library');
 const { findOrientation } = require('../server/exif');
 const { tempDir } = require('./support/helpers');
@@ -57,7 +58,8 @@ test('range header parsing', () => {
   assert.deepEqual(parseRange('bytes=-5000', 1000), { start: 0, end: 999 });
   assert.deepEqual(parseRange('bytes=990-5000', 1000), { start: 990, end: 999 });
   assert.equal(parseRange('bytes=1000-', 1000), 'invalid');
-  assert.equal(parseRange('bytes=5-2', 1000), 'invalid');
+  assert.equal(parseRange('bytes=5-2', 1000), null); // nonsense range: ignored, whole file is sent
+  assert.equal(parseRange('bytes=2000-5', 1000), 'invalid');
   assert.equal(parseRange('bytes=-0', 1000), 'invalid');
   assert.equal(parseRange('bytes=-', 1000), 'invalid');
   assert.equal(parseRange('bytes=0-1,5-6', 1000), null);
@@ -193,4 +195,79 @@ test('EXIF orientation is found in a JPEG header', () => {
   assert.equal(findOrientation(jpeg).orientation, 6);
   assert.equal(findOrientation(Buffer.from([0xff, 0xd8, 0xff, 0xda, 0, 2])), null);
   assert.equal(findOrientation(Buffer.from('not a jpeg')), null);
+});
+
+test('thumbnail and photo sizes snap to the allowed steps', () => {
+  for (const [input, want] of [[undefined, 480], [null, 480], ['', 480], ['abc', 480], ['0', 480], ['-5', 480], ['1', 480], ['480', 480],
+    ['481', 960], ['960', 960], ['1000', 1280], ['1280', 1280], ['99999', 1280]]) {
+    assert.equal(thumbSize(input), want, String(input));
+  }
+  for (const [input, want] of [[undefined, 1920], [null, 1920], ['x', 1920], ['1', 640], ['320', 640], ['640', 640], ['641', 1280], ['1366', 1920],
+    ['1920', 1920], ['1921', 2560], ['3000', 3840], ['3840', 3840], ['999999', 3840]]) {
+    assert.equal(photoWidth(input), want, String(input));
+  }
+});
+
+test('TV server Host check: IP literals, localhost and .local names only', () => {
+  for (const ok of ['192.168.0.106:8080', '192.168.0.106', '127.0.0.1:8080', 'localhost:8080', 'LOCALHOST', 'my-mac.local:8080', 'Utpal-Barman--BS23.local:8080',
+    'Macbook.Local', '[::1]:8080', '[fe80::1]', '[fd00::5]:8080', '8.8.8.8:8080']) {
+    assert.equal(tvHostAllowed(ok), true, ok);
+  }
+  for (const bad of [undefined, '', 'evil.example.com', 'evil.example.com:8080', '192.168.0.106.evil.com', 'localhost.evil.com', 'local', '.local',
+    'evil.local.com', 'a.b.local', '[not-an-ip]', '[::1', '1.2.3', '192.168.0.106:8080@evil.com', 'my mac.local']) {
+    assert.equal(tvHostAllowed(bad), false, String(bad));
+  }
+});
+
+test('orphaned converter from a force-quit HomeFlix is stopped and its file removed', async () => {
+  const { spawn, spawnSync } = require('child_process');
+  const { Jobs } = require('../server/jobs');
+  const dir = tempDir();
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return false; } };
+  const fake = (name) => spawn(process.execPath, ['-e', 'setTimeout(function () {}, 30000)', 'ffmpeg', path.join(dir, name)], { stdio: 'ignore' });
+  const deadOwner = spawnSync(process.execPath, ['-e', '0']).pid;
+  const jobs = new Jobs({ cacheDir: dir, tools: {}, library: {}, getConfig: () => ({}) });
+  const children = [];
+  try {
+    // 1. owner gone: converter killed, temp file and note removed
+    const tmp = path.join(dir, '.homeflix-convert-abc123.mp4');
+    fs.writeFileSync(tmp, 'half');
+    const orphan = fake('.homeflix-convert-abc123.mp4'); children.push(orphan);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    fs.writeFileSync(path.join(dir, 'converting.json'), JSON.stringify({ owner: deadOwner, pid: orphan.pid, tmp: tmp }));
+    const exited = new Promise((resolve) => orphan.once('exit', resolve));
+    jobs.cleanupOrphans();
+    await exited;
+    assert.equal(alive(orphan.pid), false);
+    assert.equal(fs.existsSync(tmp), false);
+    assert.equal(fs.existsSync(path.join(dir, 'converting.json')), false);
+
+    // 2. owner still alive (another HomeFlix): nothing is touched
+    const tmp2 = path.join(dir, '.homeflix-convert-def456.mp4');
+    fs.writeFileSync(tmp2, 'half');
+    const busy = fake('.homeflix-convert-def456.mp4'); children.push(busy);
+    const owner = spawn(process.execPath, ['-e', 'setTimeout(function () {}, 30000)'], { stdio: 'ignore' }); children.push(owner);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    fs.writeFileSync(path.join(dir, 'converting.json'), JSON.stringify({ owner: owner.pid, pid: busy.pid, tmp: tmp2 }));
+    jobs.cleanupOrphans();
+    assert.equal(alive(busy.pid), true);
+    assert.equal(fs.existsSync(tmp2), true);
+
+    // 3. the remembered process number now belongs to something else: it is left alone, and so is a file that is not ours
+    const other = spawn(process.execPath, ['-e', 'setTimeout(function () {}, 30000)'], { stdio: 'ignore' }); children.push(other);
+    const precious = path.join(dir, 'holiday.mp4');
+    fs.writeFileSync(precious, 'keep');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    fs.writeFileSync(path.join(dir, 'converting.json'), JSON.stringify({ owner: deadOwner, pid: other.pid, tmp: precious }));
+    jobs.cleanupOrphans();
+    assert.equal(alive(other.pid), true);
+    assert.equal(fs.existsSync(precious), true);
+    assert.equal(fs.existsSync(path.join(dir, 'converting.json')), false);
+
+    fs.writeFileSync(path.join(dir, 'converting.json'), 'garbage');
+    jobs.cleanupOrphans();
+  } finally {
+    children.forEach((c) => { try { c.kill('SIGKILL'); } catch (e) { /* gone */ } });
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

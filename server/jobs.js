@@ -3,8 +3,10 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { spawn } = require('child_process');
-const { track, uniquePath } = require('./util');
+const { spawn, spawnSync } = require('child_process');
+const { track, uniquePath, writeFileAtomicSync } = require('./util');
+
+const TEMP_NAME = /^\.homeflix-convert-[0-9a-f]+\.mp4$/;
 
 const KEEP_FINISHED = 30;
 
@@ -16,6 +18,39 @@ class Jobs {
     this.log = opts.log || function () {};
     this.jobs = [];
     this.closed = false;
+    // Remembers the converter we started, so a later launch can stop it if this one is force-quit.
+    this.pidFile = opts.cacheDir ? path.join(opts.cacheDir, 'converting.json') : null;
+  }
+
+  notePid(child, tmp) {
+    if (!this.pidFile) return;
+    try {
+      if (child) writeFileAtomicSync(this.pidFile, JSON.stringify({ owner: process.pid, pid: child.pid, tmp: tmp }));
+      else fs.unlinkSync(this.pidFile);
+    } catch (e) { /* best effort */ }
+  }
+
+  // Stop a converter that outlived a force-quit HomeFlix and remove its half-written file.
+  cleanupOrphans() {
+    if (!this.pidFile) return;
+    let note;
+    try { note = JSON.parse(fs.readFileSync(this.pidFile, 'utf8')); } catch (e) { return; }
+    if (!note || !Number.isInteger(note.owner) || !Number.isInteger(note.pid) || typeof note.tmp !== 'string') {
+      try { fs.unlinkSync(this.pidFile); } catch (e) { /* ignore */ }
+      return;
+    }
+    if (note.owner !== process.pid) {
+      try { process.kill(note.owner, 0); return; } catch (e) { if (e.code !== 'ESRCH') return; } // its HomeFlix is still alive
+    }
+    if (note.pid > 1) {
+      // Process numbers get re-used: only stop it if it really is our converter.
+      const ps = spawnSync('/bin/ps', ['-p', String(note.pid), '-o', 'command='], { encoding: 'utf8', timeout: 5000 });
+      if (ps.status === 0 && /ffmpeg/.test(ps.stdout) && ps.stdout.indexOf(path.basename(note.tmp)) !== -1) {
+        try { process.kill(note.pid, 'SIGKILL'); } catch (e) { /* already gone */ }
+      }
+    }
+    if (TEMP_NAME.test(path.basename(note.tmp))) { try { fs.unlinkSync(note.tmp); } catch (e) { /* ignore */ } }
+    try { fs.unlinkSync(this.pidFile); } catch (e) { /* ignore */ }
   }
 
   list() {
@@ -90,6 +125,7 @@ class Jobs {
       return this.fail(job, 'The converter could not be started. Try again.');
     }
     job.child = child;
+    this.notePid(child, job.tmp);
     let buf = '', errTail = '';
     child.stdout.on('data', (d) => {
       buf += d;
@@ -108,6 +144,7 @@ class Jobs {
     child.stderr.on('data', function (d) { errTail = (errTail + d).slice(-2000); });
     child.on('error', () => { if (job.state === 'running') this.fail(job, 'The converter could not be started. Try again.'); });
     child.on('close', (code) => {
+      this.notePid(null);
       if (job.state !== 'running') return; // cancelled
       job.child = null;
       if (code !== 0) {

@@ -11,6 +11,19 @@ const { jpegOrientation } = require('./exif');
 const MAX_DEPTH = 12;
 const SKIP_DIR = /\.(photoslibrary|app|bundle|fcpbundle|imovielibrary|tvlibrary|musiclibrary)$/i;
 
+// Our own half-written files (see upload and convert). Left behind only when HomeFlix was killed.
+const TEMP_FILE = /^\.homeflix-(upload-[0-9a-f]+\.part|convert-[0-9a-f]+\.mp4)$/;
+const TEMP_STALE_MS = 10 * 60 * 1000;
+
+// A temp file nobody has written to for a while cannot belong to a running upload or conversion.
+function removeIfStale(file, maxAgeMs) {
+  try {
+    const st = fs.statSync(file);
+    if (Date.now() - st.mtimeMs > (maxAgeMs === undefined ? TEMP_STALE_MS : maxAgeMs)) { fs.unlinkSync(file); return true; }
+  } catch (e) { /* already gone */ }
+  return false;
+}
+
 function idFor(absPath) {
   return crypto.createHash('sha1').update(absPath).digest('hex').slice(0, 12);
 }
@@ -35,8 +48,10 @@ class Library {
     this.idlePromise = Promise.resolve();
     this.rescanQueued = false;
     this.closed = false;
-    this.watchers = [];
+    this.watchers = new Map();       // folder -> fs.FSWatcher
     this.watchTimer = null;
+    this.recheckTimer = null;
+    this.recheckMs = opts.recheckMs || 15000;
     this.onChange = opts.onChange || function () {};
     this.probeCacheFile = path.join(this.paths.cacheDir, 'index.json');
     this.probeCache = new Map();     // path -> { mtime, size, meta }
@@ -162,7 +177,10 @@ class Library {
       entries.forEach(function (e) { names.set(e.name.toLowerCase(), e.name); });
       for (const e of entries) {
         if (self.closed) return;
-        if (e.name.startsWith('.')) continue;
+        if (e.name.startsWith('.')) {
+          if (root.writable && e.isFile() && TEMP_FILE.test(e.name)) removeIfStale(path.join(dir, e.name));
+          continue;
+        }
         const p = path.join(dir, e.name);
         let isDir = e.isDirectory(), isFile = e.isFile(), st = null;
         if (e.isSymbolicLink()) {
@@ -199,7 +217,14 @@ class Library {
     let subsPath = null;
     if (kind === 'video' && siblingNames) {
       const vtt = siblingNames.get(base + '.vtt'), srt = siblingNames.get(base + '.srt');
-      if (vtt) subsPath = path.join(dir, vtt); else if (srt) subsPath = path.join(dir, srt);
+      for (const name of [vtt, srt]) {
+        if (!name || subsPath) continue;
+        const candidate = path.join(dir, name);
+        try {
+          // a subtitle "file" that is really a link to somewhere outside the folder does not count
+          if (fs.statSync(candidate).isFile() && isInside(fs.realpathSync(root.dir), fs.realpathSync(candidate))) subsPath = candidate;
+        } catch (e) { /* unreadable: no subtitles */ }
+      }
     }
     return {
       id: idFor(p), kind: kind, title: titleFor(file), file: file,
@@ -287,7 +312,7 @@ class Library {
 
   // sips prints "<path>\n  pixelWidth: N\n  pixelHeight: N" per file.
   async probePhotos(files) {
-    const out = new Map();
+    const out = new Map(), byName = new Map();
     const r = await run(this.tools.sips, ['-g', 'pixelWidth', '-g', 'pixelHeight'].concat(files), { timeout: 60000 });
     let current = null;
     r.stdout.split('\n').forEach(function (line) {
@@ -296,8 +321,13 @@ class Library {
         if (current) current[m[1] === 'Width' ? 'width' : 'height'] = parseInt(m[2], 10);
       } else if (line.startsWith('/')) {
         current = {};
-        out.set(line.trimEnd(), current);
+        byName.set(line.trimEnd().normalize('NFC'), current);
       }
+    });
+    // sips prints names in decomposed Unicode ("e" + accent), the file system may store them composed.
+    files.forEach(function (file) {
+      const meta = byName.get(file.normalize('NFC'));
+      if (meta) out.set(file, meta);
     });
     out.forEach(function (meta, file) {
       // Phone photos are often stored sideways with a "rotate me" flag: report the upright size.
@@ -347,24 +377,69 @@ class Library {
     this.onChange();
   }
 
+  // ---- serving ---------------------------------------------------------------
+
+  // The real location of a file we are about to send, or a reason not to send it.
+  // Checked on every request: a file swapped for a link to somewhere else must never be served.
+  async resolveInside(file) {
+    let real;
+    try {
+      real = await fsp.realpath(file);
+      if (!(await fsp.stat(real)).isFile()) return { problem: 'missing' };
+    } catch (e) {
+      return { problem: 'missing' };
+    }
+    for (const root of this.roots()) {
+      try {
+        if (isInside(await fsp.realpath(root.dir), real)) return { file: real };
+      } catch (e) { /* that folder is gone */ }
+    }
+    return { problem: 'outside' };
+  }
+
   // ---- watching ------------------------------------------------------------
 
+  // Watch every folder that exists right now, and keep checking for folders that
+  // appear later (a drive plugged back in) or disappear.
   watch() {
     this.unwatch();
     if (this.closed) return;
-    this.roots().forEach((root) => {
+    this.syncWatchers(false);
+    this.recheckTimer = setInterval(() => this.syncWatchers(true), this.recheckMs);
+    if (this.recheckTimer.unref) this.recheckTimer.unref();
+  }
+
+  syncWatchers(rescanOnChange) {
+    if (this.closed) return;
+    let changed = false;
+    const wanted = new Set(this.roots().map(function (r) { return r.dir; }));
+    this.watchers.forEach((w, dir) => {
+      if (!wanted.has(dir) || folderProblem(dir)) {
+        try { w.close(); } catch (e) { /* ignore */ }
+        this.watchers.delete(dir);
+        changed = true;
+      }
+    });
+    wanted.forEach((dir) => {
+      if (this.watchers.has(dir) || folderProblem(dir)) return;
       try {
-        const w = fs.watch(root.dir, { recursive: true, persistent: false }, (event, filename) => {
+        const w = fs.watch(dir, { recursive: true, persistent: false }, (event, filename) => {
           if (filename) {
             const parts = String(filename).split(path.sep);
             if (parts.some(function (s) { return s.startsWith('.'); })) return; // our own temp files, .DS_Store
           }
           this.scheduleScan();
         });
-        w.on('error', function () { try { w.close(); } catch (e) { /* ignore */ } });
-        this.watchers.push(w);
-      } catch (e) { /* folder missing: reported by scan */ }
+        w.on('error', () => {
+          try { w.close(); } catch (e) { /* ignore */ }
+          if (this.watchers.get(dir) === w) this.watchers.delete(dir);
+          this.scheduleScan();
+        });
+        this.watchers.set(dir, w);
+        changed = true;
+      } catch (e) { /* tried again on the next check */ }
     });
+    if (changed && rescanOnChange) this.scan();
   }
 
   scheduleScan() {
@@ -376,8 +451,9 @@ class Library {
 
   unwatch() {
     this.watchers.forEach(function (w) { try { w.close(); } catch (e) { /* ignore */ } });
-    this.watchers = [];
+    this.watchers.clear();
     if (this.watchTimer) { clearTimeout(this.watchTimer); this.watchTimer = null; }
+    if (this.recheckTimer) { clearInterval(this.recheckTimer); this.recheckTimer = null; }
   }
 
   close() {
@@ -400,7 +476,7 @@ class Library {
       duration: rec.kind === 'video' ? rec.duration : null,
       width: rec.width, height: rec.height,
       playable: rec.playable, note: rec.note, hasSubs: rec.hasSubs, writable: rec.writable,
-      src: '/media/' + rec.id, thumb: '/thumb/' + rec.id,
+      src: '/media/' + rec.id, thumb: '/thumb/' + rec.id + '?v=' + rec.mtime,
       progress: rec.kind === 'video' && progress ? progress.get(rec.id) : null
     };
   }
@@ -428,4 +504,4 @@ class Library {
   }
 }
 
-module.exports = { Library, idFor, titleFor };
+module.exports = { Library, idFor, titleFor, TEMP_FILE, removeIfStale };

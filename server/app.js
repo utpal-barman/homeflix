@@ -4,6 +4,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
 const http = require('http');
+const netLib = require('net');
 const path = require('path');
 const crypto = require('crypto');
 const { pipeline } = require('stream');
@@ -12,7 +13,7 @@ const { resolvePaths } = require('./paths');
 const { ConfigStore, validatePatch } = require('./config');
 const { detectTools } = require('./tools');
 const { Library } = require('./library');
-const { Media, placeholderSvg } = require('./media');
+const { Media, placeholderSvg, thumbSize, photoWidth } = require('./media');
 const { Jobs } = require('./jobs');
 const { ProgressStore } = require('./progress');
 const { NetInfo, isPrivateAddress, isLoopback, stripMapped, listAddresses } = require('./netinfo');
@@ -35,6 +36,20 @@ function missingPage(what) {
     'div{display:table-cell;vertical-align:middle;text-align:center;padding:24px}h1{font-size:28px;font-weight:800;letter-spacing:6px;margin:0 0 20px}h1 span{color:#ffb454}p{color:#a39fb0;font-size:18px;line-height:1.5;margin:8px 0}</style></head>' +
     '<body><div><h1>HOME<span>FLIX</span></h1><p>HomeFlix is running, but its ' + what + ' files are missing.</p>' +
     '<p>Download HomeFlix again and replace the whole folder, then open it once more.</p></div></body></html>';
+}
+
+// The TV server answers only when addressed by IP, "localhost" or a ".local" name.
+function tvHostAllowed(header) {
+  if (typeof header !== 'string' || !header) return false;
+  let h = header.trim().toLowerCase();
+  if (h[0] === '[') {
+    const m = /^\[([0-9a-f:.]+)\](?::\d{1,5})?$/.exec(h);
+    return !!m && netLib.isIPv6(m[1]);
+  }
+  h = h.replace(/:\d{1,5}$/, '');
+  if (netLib.isIPv4(h)) return true;
+  if (h === 'localhost') return true;
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?\.local$/.test(h);
 }
 
 // Split and validate a request path. Returns null for anything suspicious.
@@ -98,9 +113,9 @@ function createApp(opts) {
   const tools = opts.tools || detectTools(env);
   const config = new ConfigStore(paths);
   const progress = new ProgressStore(paths.progressFile);
-  const library = new Library({ paths: paths, tools: tools, getConfig: function () { return config.get(); }, log: log });
+  const library = new Library({ paths: paths, tools: tools, recheckMs: opts.recheckMs, getConfig: function () { return config.get(); }, log: log });
   const media = new Media({ tools: tools, cacheDir: paths.cacheDir });
-  const jobs = new Jobs({ tools: tools, library: library, getConfig: function () { return config.get(); }, log: log });
+  const jobs = new Jobs({ cacheDir: paths.cacheDir, tools: tools, library: library, getConfig: function () { return config.get(); }, log: log });
   const net = new NetInfo();
   const tvHost = opts.tvHost || env.HOMEFLIX_BIND || '0.0.0.0';
   const clients = new Map();
@@ -181,7 +196,8 @@ function createApp(opts) {
       tools: { ffmpeg: !!tools.ffmpeg, sips: !!tools.sips },
       scanning: library.scanning,
       clients: tv ? activeClients() : [],
-      error: tvError || library.error || null
+      error: tvError || null,
+      libraryError: library.error || null
     };
   }
 
@@ -320,7 +336,8 @@ function createApp(opts) {
       return sendEmpty(res, 204), true;
     }
 
-    if (seg.length === 2 && (seg[0] === 'media' || seg[0] === 'thumb' || seg[0] === 'photo' || seg[0] === 'subs')) {
+    if (seg[0] === 'media' || seg[0] === 'thumb' || seg[0] === 'photo' || seg[0] === 'subs') {
+      if (seg.length !== 2) return notFound(req, res), true;
       if (!isRead(req)) return wrongMethod(req, res, 'GET, HEAD'), true;
       let id = seg[1];
       if (seg[0] === 'subs') {
@@ -329,40 +346,55 @@ function createApp(opts) {
       }
       const rec = await record(id);
       if (!rec) return notFound(req, res), true;
+      const placeholder = function () {
+        const svg = Buffer.from(placeholderSvg(rec));
+        res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Content-Length': svg.length, 'Cache-Control': 'no-cache' });
+        res.end(req.method === 'HEAD' ? undefined : svg);
+        return true;
+      };
+      const fileMissing = function () {
+        sendError(req, res, 404, 'file_missing', 'This file is no longer where it was. It may have been moved, renamed or deleted on the Mac, or its drive was unplugged.');
+        return true;
+      };
+
+      if (seg[0] === 'subs') {
+        if (!rec.subsPath) return notFound(req, res), true;
+        const subs = await library.resolveInside(rec.subsPath);
+        if (!subs.file) return notFound(req, res), true;
+        let buf;
+        try {
+          const st = await fsp.stat(subs.file);
+          if (st.size > 8 * 1024 * 1024) throw new Error('too big');
+          buf = await fsp.readFile(subs.file);
+        } catch (e) { return notFound(req, res), true; }
+        const vtt = /\.srt$/i.test(rec.subsPath) ? Buffer.from(srtToVtt(buf)) : buf;
+        res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Content-Length': vtt.length, 'Cache-Control': 'no-cache' });
+        return res.end(req.method === 'HEAD' ? undefined : vtt), true;
+      }
+
+      // Checked on every request: only real files inside the library folders are ever sent.
+      const real = await library.resolveInside(rec.path);
 
       if (seg[0] === 'media') {
-        return sendFile(req, res, rec.path, { type: mimeOf(rec.ext), cache: 'no-cache' }), true;
+        if (real.problem === 'missing') return fileMissing();
+        if (!real.file) return notFound(req, res), true;
+        return sendFile(req, res, real.file, { type: mimeOf(rec.ext), cache: 'no-cache', missingCode: 'file_missing' }), true;
       }
 
       if (seg[0] === 'thumb') {
-        const file = await media.thumb(rec);
+        if (!real.file) return placeholder();
+        const file = await media.thumb(rec, thumbSize(u.query.get('w')), real.file);
         if (file) return sendFile(req, res, file, { type: 'image/jpeg', cache: 'max-age=86400' }), true;
-        const svg = Buffer.from(placeholderSvg(rec));
-        res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Content-Length': svg.length, 'Cache-Control': 'no-cache' });
-        return res.end(req.method === 'HEAD' ? undefined : svg), true;
+        return placeholder();
       }
 
-      if (seg[0] === 'photo') {
-        if (rec.kind !== 'photo') return notFound(req, res), true;
-        let w = parseInt(u.query.get('w'), 10);
-        if (!(w > 0)) w = 1920;
-        w = Math.max(320, Math.min(3840, w));
-        const out = await media.photo(rec, w);
-        if (!out) return sendError(req, res, 415, 'cannot_convert', 'This photo is in a format the TV cannot show, and it could not be converted on this Mac.'), true;
-        return sendFile(req, res, out.file, { type: out.type, cache: out.original ? 'no-cache' : 'max-age=86400' }), true;
-      }
-
-      // subs
-      if (!rec.subsPath) return notFound(req, res), true;
-      let buf;
-      try {
-        const st = await fsp.stat(rec.subsPath);
-        if (st.size > 8 * 1024 * 1024) throw new Error('too big');
-        buf = await fsp.readFile(rec.subsPath);
-      } catch (e) { return notFound(req, res), true; }
-      const vtt = /\.srt$/i.test(rec.subsPath) ? Buffer.from(srtToVtt(buf)) : buf;
-      res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Content-Length': vtt.length, 'Cache-Control': 'no-cache' });
-      return res.end(req.method === 'HEAD' ? undefined : vtt), true;
+      // photo
+      if (rec.kind !== 'photo') return notFound(req, res), true;
+      if (real.problem === 'missing') return fileMissing();
+      if (!real.file) return notFound(req, res), true;
+      const out = await media.photo(rec, photoWidth(u.query.get('w')), real.file);
+      if (!out) return sendError(req, res, 415, 'cannot_convert', 'This photo is in a format the TV cannot show, and it could not be converted on this Mac.'), true;
+      return sendFile(req, res, out.file, { type: out.type, cache: out.original ? 'no-cache' : 'max-age=86400' }), true;
     }
 
     return false;
@@ -376,6 +408,11 @@ function createApp(opts) {
       req.resume();
       return sendError(req, res, 403, 'forbidden', 'HomeFlix only works on your home network. Connect this device to the same Wi-Fi as the Mac.');
     }
+    if (!tvHostAllowed(req.headers.host)) {
+      // A web page elsewhere could point its own name at this Mac; real TVs use the address, localhost or a .local name.
+      req.resume();
+      return sendError(req, res, 403, 'forbidden', 'Open HomeFlix on your TV using the address shown in the control panel on the Mac.');
+    }
     if (!isLoopback(remote)) {
       clients.set(stripMapped(remote), { lastSeen: Date.now(), userAgent: String(req.headers['user-agent'] || '').slice(0, 300) });
     }
@@ -385,6 +422,9 @@ function createApp(opts) {
     req.resume();
     if (u.segments[0] === 'api') return notFound(req, res);
     if (u.segments[0] === 'shared') return serveStatic(req, res, path.join(paths.webRoot, 'shared'), u.segments.slice(1), 'shared');
+    if (u.segments.length === 1 && u.segments[0] === 'favicon.ico' && !fs.existsSync(path.join(paths.webRoot, 'tv', 'favicon.ico'))) {
+      return serveStatic(req, res, path.join(paths.webRoot, 'shared'), ['logo.svg'], 'shared');
+    }
     return serveStatic(req, res, path.join(paths.webRoot, 'tv'), u.segments, 'TV app');
   }
 
@@ -403,7 +443,11 @@ function createApp(opts) {
     }
     if (!isRead(req) && req.headers.origin !== undefined) {
       let ok = false;
-      try { ok = !!LOCAL_HOSTS[new URL(req.headers.origin).hostname.toLowerCase()]; } catch (e) { ok = false; }
+      try {
+        // Only pages served by this very control server (same host and port) may change things.
+        const origin = new URL(req.headers.origin);
+        ok = origin.protocol === 'http:' && origin.host.toLowerCase() === String(req.headers.host).toLowerCase();
+      } catch (e) { ok = false; }
       if (!ok) {
         req.resume();
         return sendError(req, res, 403, 'forbidden', 'Only the HomeFlix control panel on this Mac can change things.');
@@ -650,6 +694,7 @@ function createApp(opts) {
       throw err;
     }
     control.server.requestTimeout = 0; // uploads of big files take a while
+    jobs.cleanupOrphans(); // a converter left running by a HomeFlix that was force-quit
     firstScan = library.scan();
     library.watch();
     net.refresh(true);
@@ -684,4 +729,4 @@ function createApp(opts) {
   return app;
 }
 
-module.exports = { createApp, parseUrl, DEFAULT_CONTROL_PORT, VERSION };
+module.exports = { createApp, parseUrl, tvHostAllowed, DEFAULT_CONTROL_PORT, VERSION };

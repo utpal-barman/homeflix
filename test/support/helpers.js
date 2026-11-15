@@ -6,6 +6,40 @@ const http = require('http');
 const path = require('path');
 const { createApp } = require('../../server/app');
 
+const zlib = require('zlib');
+
+// A real (plain grey) PNG, so image tools have something valid to read.
+function makePng(width, height) {
+  const crcTable = [];
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcTable[n] = c >>> 0; }
+  const crc = (buf) => { let c = 0xffffffff; for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const sum = Buffer.alloc(4); sum.writeUInt32BE(crc(body));
+    return Buffer.concat([len, body, sum]);
+  };
+  const head = Buffer.alloc(13);
+  head.writeUInt32BE(width, 0); head.writeUInt32BE(height, 4); head[8] = 8; head[9] = 2; // 8-bit RGB
+  const raw = Buffer.alloc((width * 3 + 1) * height, 0x80);
+  for (let y = 0; y < height; y++) raw[y * (width * 3 + 1)] = 0;
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', head), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+
+// Width and height of a JPEG, read from its frame header.
+function jpegSize(buf) {
+  let p = 2;
+  while (p + 9 < buf.length) {
+    if (buf[p] !== 0xff) return null;
+    const marker = buf[p + 1];
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      return { height: buf.readUInt16BE(p + 5), width: buf.readUInt16BE(p + 7) };
+    }
+    p += 2 + buf.readUInt16BE(p + 2);
+  }
+  return null;
+}
+
 const NO_TOOLS = { ffmpeg: null, ffprobe: null, sips: null, qlmanage: null };
 
 function tempDir(prefix) {
@@ -61,6 +95,7 @@ async function startApp(options) {
     env: { HOMEFLIX_HOME: home, PATH: process.env.PATH },
     controlPort: 0,
     tvHost: '127.0.0.1',
+    recheckMs: options.recheckMs,
     tools: options.tools === undefined ? NO_TOOLS : options.tools,
     ui: {
       trash: async function (file) {
@@ -92,4 +127,4 @@ function bytes(n) {
   return b;
 }
 
-module.exports = { startApp, request, freePort, tempDir, bytes, NO_TOOLS };
+module.exports = { startApp, request, freePort, tempDir, bytes, makePng, jpegSize, NO_TOOLS };
