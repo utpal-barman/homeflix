@@ -239,3 +239,35 @@ Single page, modern JS, no dependencies.
 - **Help**: supported formats, TV browser limitations, troubleshooting.
 - Polls `/api/status` every 2s; shows a banner if the control server itself
   goes away ("HomeFlix was closed. Open it again to continue.").
+
+## Implementation notes
+
+Behaviour settled while building, binding like the rest of this file:
+
+- The control server also serves the TV app at `/tv/` for previewing, so
+  `web/tv/` must reference its own assets with relative URLs.
+- The control server refuses requests whose `Host` is not
+  `localhost`/`127.0.0.1`/`[::1]`, and non-GET requests with a foreign
+  `Origin` (`403 forbidden`), so no other website can drive it.
+- If the control port is taken by something else, the next free port up to
+  7808 is used and printed. A second HomeFlix launch detects the first.
+- `status.url`, `altUrls` and `qrSvg` are filled whenever there is a network,
+  also while `running` is false. `clients` excludes loopback.
+- `PUT /api/config` with a new port that cannot be taken answers `200` with
+  `running: false` and `error` set. Ports must be 1024–65535.
+- Upload strips path parts from `name` instead of rejecting them. Empty
+  files are `400 empty_file`.
+- `DELETE /api/jobs/<id>` removes a job in any state (cancel or dismiss).
+  Jobs run one at a time; converting an item twice returns the running job.
+  Output for an item in an extra folder goes to `libraryFolder/<collection>/`.
+- `/thumb/<unknown id>` is `404`; the placeholder applies to known items.
+  Thumbnails are 480px on the longest side.
+- `/photo` sends GIFs unchanged (keeps animation) and never enlarges.
+- `width`/`height`/`duration` may be null until the first scan finishes
+  (`status.scanning` false).
+- Subtitles need the exact base name (`Movie.srt`, not `Movie.en.srt`).
+- `wifiName` is usually null on recent macOS, which hides the SSID.
+- With `HOMEFLIX_HOME` set, deletes go to `<home>/trash/`. Dev knobs:
+  `HOMEFLIX_BIND=127.0.0.1`, `--verbose`, `--help`.
+- Unknown non-file paths return the app's `index.html`; unknown `/api/*` is
+  JSON `404`.
