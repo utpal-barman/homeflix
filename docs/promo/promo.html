@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HomeFlix promo</title>
+<!--
+  HomeFlix promo trailer. 960x540, 20 seconds, loops.
+  The whole animation is a pure function of time: window.seek(t) with t in
+  seconds draws exactly one frame and never reads the clock. Opened in a normal
+  browser it plays in real time for preview; render.mjs calls seek() per frame.
+  seek('poster') draws the still used for docs/media/homeflix-promo-poster.png.
+  All artwork is drawn here in SVG. Nothing is loaded from the network.
+-->
+<style>
+  :root {
+    --ink-0: #0b0a0f; --ink-1: #15131c; --ink-2: #211e2b; --ink-3: #322e40;
+    --text: #f4f1ea; --muted: #a39fb0; --beam: #ffb454; --beam-2: #ff7a59;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #0b0a0f; overflow: hidden; }
+  body {
+    font-family: -apple-system, "SF Pro Display", "Helvetica Neue", "Segoe UI", Roboto, Arial, sans-serif;
+    color: var(--text); -webkit-font-smoothing: antialiased;
+  }
+  #stage { position: absolute; left: 0; top: 0; width: 960px; height: 540px; overflow: hidden; background: var(--ink-0); }
+  .abs { position: absolute; left: 0; top: 0; }
+  .full { position: absolute; left: 0; top: 0; width: 960px; height: 540px; }
+  .o { transform-origin: 0 0; }
+  b.a, .a { color: var(--beam); font-weight: inherit; }
+  svg { display: block; }
+
+  /* hook */
+  #hookbox { position: absolute; left: 480px; top: 262px; padding: 30px 50px 34px; white-space: nowrap; }
+  #hookframe { position: absolute; left: 0; top: 0; right: 0; bottom: 0; border: 3px solid #5d5870; border-radius: 18px; }
+  #hookbase { position: absolute; left: -6%; right: -6%; bottom: -15px; height: 12px; background: #5d5870; border-radius: 2px 2px 12px 12px; }
+  .hl { height: 70px; overflow: hidden; font-size: 56px; line-height: 70px; font-weight: 800; letter-spacing: -1px; }
+  .hl span { display: inline-block; margin-right: .26em; }
+
+  /* brand */
+  #proj { position: absolute; left: 34px; top: 245px; width: 70px; height: 50px; border-radius: 10px; background: var(--ink-2); border: 2px solid var(--ink-3); }
+  #proj i { position: absolute; right: -9px; top: 13px; width: 20px; height: 20px; border-radius: 50%; background: var(--beam); border: 3px solid var(--ink-0); }
+  #proj u { position: absolute; left: 12px; top: -9px; width: 26px; height: 9px; border-radius: 4px 4px 0 0; background: var(--ink-3); }
+  #wm { position: absolute; left: 110px; width: 850px; text-align: center; height: 110px; overflow: hidden; font-size: 92px; line-height: 110px; font-weight: 800; white-space: nowrap; }
+  #wm span { display: inline-block; margin: 0 7px; }
+  .sub { position: absolute; left: 110px; width: 850px; text-align: center; font-size: 25px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+  .sub b { color: var(--text); font-weight: 700; }
+  #cta { position: absolute; left: 110px; width: 850px; top: 372px; text-align: center; }
+  #cta span { display: inline-block; height: 52px; line-height: 52px; padding: 0 30px; border-radius: 999px; background: var(--beam); color: #0b0a0f; font-size: 23px; font-weight: 800; }
+  #cta svg { display: inline-block; vertical-align: -3px; margin-left: 10px; }
+
+  /* captions */
+  .cap { position: absolute; white-space: nowrap; font-weight: 800; letter-spacing: -.5px; }
+  .num { display: inline-block; width: 1.15em; height: 1.15em; line-height: 1.15em; border-radius: 50%; background: var(--beam); color: #0b0a0f; text-align: center; margin-right: .38em; font-size: .82em; vertical-align: .08em; letter-spacing: 0; }
+  #cap1 { left: 56px; top: 168px; font-size: 46px; line-height: 54px; }
+  #cap1 .num { display: block; margin-bottom: 18px; font-size: 30px; }
+  .capc { left: 0; width: 960px; text-align: center; }
+  #cap2, #cap3 { top: 440px; font-size: 38px; }
+  #cap4, #cap5, #cap6 { top: 462px; font-size: 29px; }
+
+  /* laptop */
+  #mac { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  #macbezel { position: absolute; left: -11px; top: -11px; width: 482px; height: 312px; border-radius: 15px; background: var(--ink-2); border: 2px solid var(--ink-3); }
+  #macbase { position: absolute; left: -48px; top: 301px; width: 556px; height: 15px; border-radius: 2px 2px 13px 13px; background: var(--ink-3); }
+  #macbase:after { content: ""; position: absolute; left: 228px; top: 0; width: 100px; height: 5px; border-radius: 0 0 6px 6px; background: var(--ink-2); }
+  #macscreen { position: absolute; left: 0; top: 0; width: 460px; height: 288px; background: var(--ink-0); border-radius: 4px; overflow: hidden; }
+  .mview { position: absolute; left: 0; top: 0; width: 460px; height: 288px; }
+  .mhead { position: absolute; left: 0; top: 0; width: 460px; height: 38px; border-bottom: 1px solid var(--ink-2); }
+  .mwm { position: absolute; left: 23px; top: 11px; font-size: 13px; font-weight: 800; letter-spacing: 2px; }
+  .mini { position: absolute; right: 23px; top: 10px; width: 34px; height: 18px; border-radius: 9px; background: var(--ink-3); }
+  .mini:after { content: ""; position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); }
+  .mlib { position: absolute; left: 23px; top: 48px; font-size: 15px; font-weight: 700; }
+  #mcount { position: absolute; right: 23px; top: 50px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  #mdrop { position: absolute; left: 13px; top: 74px; width: 434px; height: 202px; border-radius: 10px; border: 2px dashed var(--ink-3); }
+  #tiles { position: absolute; left: 0; top: 0; width: 460px; height: 288px; }
+  .tile { position: absolute; width: 96px; height: 54px; border-radius: 6px; overflow: hidden; background: var(--ink-2); }
+  .tile svg { width: 100%; height: 100%; }
+  .tile .pl { position: absolute; left: 50%; top: 50%; margin: -9px 0 0 -6px; border: 9px solid transparent; border-left: 14px solid rgba(244,241,234,.92); border-right: 0; }
+  .tflash { position: absolute; width: 96px; height: 54px; border-radius: 6px; box-shadow: 0 0 0 3px var(--beam); }
+  .phead { position: absolute; left: 0; width: 460px; top: 26px; text-align: center; font-size: 34px; font-weight: 800; height: 44px; }
+  .phead div { position: absolute; left: 0; width: 460px; }
+  #sw { position: absolute; left: 150px; top: 92px; width: 160px; height: 84px; border-radius: 42px; background: var(--ink-3); }
+  #knob { position: absolute; left: 9px; top: 9px; width: 66px; height: 66px; border-radius: 50%; background: var(--text); }
+  #addr { position: absolute; left: 60px; width: 340px; top: 206px; height: 50px; line-height: 46px; border-radius: 25px; border: 2px solid var(--beam); text-align: center; font-size: 25px; font-weight: 800; letter-spacing: .5px; }
+  #cursor { position: absolute; left: 0; top: 0; width: 30px; height: 30px; }
+  #ripple { position: absolute; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%; border: 3px solid var(--beam); }
+
+  /* tv */
+  #tv { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  #tvbezel { position: absolute; left: -13px; top: -13px; width: 986px; height: 566px; border-radius: 16px; background: #1a1822; border: 3px solid var(--ink-3); }
+  #tvneck { position: absolute; left: 400px; top: 553px; width: 160px; height: 30px; background: var(--ink-2); }
+  #tvfoot { position: absolute; left: 290px; top: 580px; width: 380px; height: 13px; border-radius: 7px; background: var(--ink-3); }
+  #tvscreen { position: absolute; left: 0; top: 0; width: 960px; height: 540px; overflow: hidden; background: #050508; border-radius: 3px; }
+  #tvbar { position: absolute; left: 110px; top: 216px; width: 740px; height: 108px; border-radius: 54px; background: var(--ink-2); border: 3px solid var(--ink-3); font-size: 50px; font-weight: 700; line-height: 100px; padding-left: 96px; white-space: nowrap; }
+  #tvbar svg { position: absolute; left: 34px; top: 30px; }
+  #caret { display: inline-block; width: 4px; height: 52px; background: var(--beam); vertical-align: -9px; margin-left: 4px; }
+  #tvline { position: absolute; left: 0; top: 268px; width: 960px; height: 4px; background: var(--beam); }
+  #tvui { position: absolute; left: 0; top: 0; width: 960px; height: 540px; background: var(--ink-0); overflow: hidden; }
+  .bb { position: absolute; left: 0; top: 0; width: 960px; height: 344px; overflow: hidden; background: var(--ink-1); }
+  .bb .art { position: absolute; left: 0; top: 0; width: 960px; height: 344px; }
+  .bb .art svg { width: 100%; height: 100%; }
+  .bb .hs { display: none; }
+  .bsh { position: absolute; left: 0; top: 0; width: 960px; height: 345px;
+    background: linear-gradient(90deg, rgba(11,10,15,.93) 0%, rgba(11,10,15,.72) 28%, rgba(11,10,15,0) 60%),
+                linear-gradient(0deg, #0b0a0f 0%, rgba(11,10,15,0) 30%),
+                linear-gradient(180deg, rgba(11,10,15,.6) 0%, rgba(11,10,15,0) 24%); }
+  .top { position: absolute; left: 48px; top: 24px; width: 864px; height: 30px; font-size: 17px; font-weight: 600; color: var(--muted); }
+  .top .w { position: absolute; left: 0; top: 0; font-size: 21px; font-weight: 800; letter-spacing: 3.2px; color: var(--text); }
+  .top .t { position: absolute; top: 3px; }
+  .top .on { color: var(--text); border-bottom: 3px solid var(--beam); padding-bottom: 4px; }
+  .btx { position: absolute; left: 48px; top: 138px; width: 600px; }
+  .btx .l { font-size: 13px; font-weight: 800; letter-spacing: 2.6px; color: var(--beam); }
+  .btx .h { font-size: 50px; line-height: 58px; font-weight: 800; letter-spacing: -1px; margin-top: 4px; white-space: nowrap; }
+  .btx .m { font-size: 17px; color: var(--muted); margin-top: 2px; font-weight: 500; }
+  .btx .p { display: inline-block; margin-top: 18px; height: 44px; line-height: 44px; padding: 0 24px 0 20px; border-radius: 22px; background: var(--beam); color: #0b0a0f; font-size: 18px; font-weight: 800; }
+  .tri { display: inline-block; border: 7px solid transparent; border-left: 11px solid #0b0a0f; border-right: 0; margin-right: 9px; vertical-align: -1px; }
+  #rowsvp { position: absolute; left: 0; top: 344px; width: 960px; height: 196px; overflow: hidden; }
+  .row { position: absolute; left: 0; width: 960px; height: 184px; }
+  .row h4 { position: absolute; left: 48px; top: 6px; font-size: 18px; font-weight: 700; }
+  .card { position: absolute; top: 40px; height: 110px; border-radius: 9px; overflow: hidden; background: var(--ink-2); }
+  .card svg { width: 100%; height: 100%; }
+  .card em { position: absolute; left: 0; bottom: 0; height: 5px; background: var(--beam); }
+  .card s { position: absolute; left: 0; bottom: 0; width: 100%; height: 5px; background: rgba(11,10,15,.6); }
+  .ring { opacity: 0; visibility: hidden; position: absolute; top: 40px; height: 110px; border-radius: 9px; box-shadow: 0 0 0 4px var(--beam); }
+  .cn { position: absolute; top: 157px; font-size: 14px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+  #player, #viewer { position: absolute; left: 0; top: 0; width: 960px; height: 540px; overflow: hidden; background: #000; }
+  .fs { position: absolute; left: 0; top: 0; width: 960px; height: 540px; }
+  .fs svg { width: 100%; height: 100%; }
+  .pscrim { position: absolute; left: 0; top: 330px; width: 960px; height: 210px; background: linear-gradient(0deg, rgba(11,10,15,.92) 0%, rgba(11,10,15,0) 100%); }
+  .ptitle { position: absolute; left: 48px; top: 408px; font-size: 34px; font-weight: 800; }
+  .ptrack { position: absolute; left: 48px; top: 474px; width: 864px; height: 7px; border-radius: 4px; background: rgba(244,241,234,.28); }
+  #pfill { position: absolute; left: 0; top: 0; height: 7px; border-radius: 4px; background: var(--beam); }
+  #pknob { position: absolute; top: -7px; width: 21px; height: 21px; margin-left: -10px; border-radius: 50%; background: var(--beam); }
+  .ptime { position: absolute; top: 492px; font-size: 17px; font-weight: 600; color: var(--text); }
+  #dlg { position: absolute; left: 0; top: 0; width: 960px; height: 540px; background: rgba(11,10,15,.72); text-align: center; }
+  #dlg h5 { margin-top: 176px; font-size: 38px; font-weight: 800; }
+  #dlg p { font-size: 20px; color: var(--muted); margin-top: 6px; }
+  #dlg .bt { display: inline-block; margin: 30px 10px 0; height: 60px; line-height: 60px; padding: 0 32px; border-radius: 30px; font-size: 23px; font-weight: 800; background: var(--ink-3); color: var(--text); }
+  #dlg .bt.f { background: var(--beam); color: #0b0a0f; box-shadow: 0 0 0 4px #0b0a0f, 0 0 0 8px var(--beam); }
+  .vpill { position: absolute; right: 48px; top: 446px; height: 46px; line-height: 42px; padding: 0 22px 0 18px; border-radius: 23px; border: 2px solid var(--beam); color: var(--beam); font-size: 19px; font-weight: 800; background: rgba(11,10,15,.6); }
+  .vpill .tri { border-left-color: var(--beam); }
+  .vsub { position: absolute; left: 48px; top: 452px; font-size: 19px; color: var(--muted); font-weight: 600; }
+
+  /* wifi + signal */
+  #wifi { position: absolute; left: 436px; top: 226px; width: 60px; height: 48px; }
+  #wifilab { position: absolute; left: 376px; width: 180px; top: 282px; text-align: center; font-size: 15px; font-weight: 700; color: var(--muted); letter-spacing: .3px; }
+
+  /* claims */
+  #claims { background: var(--ink-0); }
+  .cl { position: absolute; left: 108px; font-size: 56px; font-weight: 800; letter-spacing: -1.2px; white-space: nowrap; height: 70px; line-height: 70px; }
+  .cl svg { position: absolute; left: 0; top: 10px; }
+  .cl span { position: absolute; left: 76px; top: 0; }
+  #band { position: absolute; top: -20px; width: 150px; height: 580px; background: var(--beam); }
+  #band2 { position: absolute; top: -20px; width: 26px; height: 580px; background: var(--beam-2); }
+
+  /* poster */
+  #poster { background: var(--ink-0); }
+  #poster .pw { position: absolute; left: 48px; top: 150px; font-size: 47px; font-weight: 800; letter-spacing: 6px; }
+  #poster .pt { position: absolute; left: 48px; top: 226px; font-size: 23px; line-height: 33px; color: var(--muted); font-weight: 500; }
+  #poster .pt b { color: var(--text); font-weight: 700; }
+  #poster .pc { position: absolute; left: 0; width: 960px; text-align: center; top: 468px; font-size: 19px; font-weight: 700; color: var(--beam); letter-spacing: .4px; }
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- brand: projector beam, wordmark (shared by the title beat and the end card) -->
+  <svg id="beam" class="full" viewBox="0 0 960 540">
+    <defs><clipPath id="beamclip"><rect id="beamrect" x="0" y="0" width="0" height="540"/></clipPath></defs>
+    <g clip-path="url(#beamclip)">
+      <path d="M106 270 L960 24 V516 Z" fill="#ffb454" opacity=".075"/>
+      <path d="M106 270 L960 150 V390 Z" fill="#ffb454" opacity=".06"/>
+    </g>
+  </svg>
+  <div id="proj"><u></u><i></i></div>
+  <div id="wm"></div>
+  <div id="tag" class="sub" style="top:330px">Your <b>Mac</b> holds the files. Your <b>TV</b> plays them.</div>
+  <div id="endsub" class="sub" style="top:296px">Your own videos and photos, on the big screen.</div>
+  <div id="cta"><span>Start in three steps<svg width="18" height="18" viewBox="0 0 18 18"><path d="M3 6l6 6 6-6" fill="none" stroke="#0b0a0f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
+
+  <!-- hook -->
+  <div id="hookbox">
+    <div id="hookframe"></div><div id="hookbase"></div>
+    <div class="hl" id="hl1"></div>
+    <div class="hl" id="hl2"></div>
+  </div>
+
+  <!-- signal -->
+  <svg id="sig" class="full" viewBox="0 0 960 540">
+    <defs><clipPath id="sigclip"><rect id="sigrect" x="0" y="0" width="0" height="540"/></clipPath></defs>
+    <path id="sigpath" clip-path="url(#sigclip)" d="M232 108 Q476 -6 722 112" fill="none" stroke="#ffb454" stroke-width="4" stroke-linecap="round" stroke-dasharray="2 13"/>
+    <circle id="sighead" r="8" fill="#ffb454"/>
+  </svg>
+  <svg id="wifi" viewBox="0 0 60 48">
+    <path class="wa" d="M6 18 A34 34 0 0 1 54 18" fill="none" stroke-width="5.5" stroke-linecap="round"/>
+    <path class="wa" d="M15 27 A21 21 0 0 1 45 27" fill="none" stroke-width="5.5" stroke-linecap="round"/>
+    <circle class="wd" cx="30" cy="39" r="5"/>
+  </svg>
+  <div id="wifilab">same Wi-Fi</div>
+
+  <!-- laptop -->
+  <div id="mac">
+    <div id="macbezel"></div><div id="macbase"></div>
+    <div id="macscreen">
+      <div class="mview" id="mlibv">
+        <div class="mhead"><div class="mwm">HOME<b class="a">FLIX</b></div><div class="mini"></div></div>
+        <div class="mlib">Library</div><div id="mcount">0 items</div>
+        <div id="mdrop"></div>
+      </div>
+      <div class="mview" id="mpowv">
+        <div class="phead"><div id="ph1">Turn on</div><div id="ph2" class="a">HomeFlix is on</div></div>
+        <div id="sw"><div id="knob"></div></div>
+        <div id="addr">192.168.1.20:8080</div>
+      </div>
+    </div>
+    <div id="tiles"></div>
+    <div id="ripple"></div>
+    <svg id="cursor" viewBox="0 0 30 30"><path d="M5 3 L5 24 L11 18.5 L15 27 L19 25 L15 17 L23 17 Z" fill="#f4f1ea" stroke="#0b0a0f" stroke-width="2" stroke-linejoin="round"/></svg>
+  </div>
+
+  <!-- tv -->
+  <div id="tv">
+    <div id="tvneck"></div><div id="tvfoot"></div><div id="tvbezel"></div>
+    <div id="tvscreen">
+      <div id="tvbar"><svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="#a39fb0" stroke-width="3.5"/><path d="M5 22h34M22 5c-9 9-9 25 0 34M22 5c9 9 9 25 0 34" fill="none" stroke="#a39fb0" stroke-width="3.5"/></svg><span id="typed"></span><i id="caret"></i></div>
+      <div id="tvui">
+        <div class="bb"><div id="bbarts"></div><div class="bsh"></div></div>
+        <div class="top"><div class="w">HOME<b class="a">FLIX</b></div>
+          <span class="t on" style="left:190px">Home</span><span class="t" style="left:270px">Videos</span><span class="t" style="left:356px">Photos</span>
+          <span class="t" style="right:0">8:42 pm</span></div>
+        <div id="btxs"></div>
+        <div id="rowsvp"><div id="rows" class="abs"></div></div>
+      </div>
+      <div id="player">
+        <div class="fs" id="part"></div>
+        <div class="pscrim"></div>
+        <div class="ptitle">Lena turns five</div>
+        <div class="ptrack"><div id="pfill"></div><div id="pknob"></div></div>
+        <div class="ptime" style="left:48px" id="pt1">12:40</div><div class="ptime" style="right:48px" id="pt2">-18:20</div>
+        <div id="dlg"><h5>Lena turns five</h5><p>18 min left.</p><span class="bt f" id="dres">Resume from 12:40</span><span class="bt">Start over</span></div>
+      </div>
+      <div id="viewer">
+        <div class="fs" id="va"></div><div class="fs" id="vb"></div>
+        <div class="pscrim"></div>
+        <div class="ptitle" id="vtitle">Lake Como</div>
+        <div class="vsub" id="vsub">Italy 2024</div>
+        <div class="vpill"><i class="tri"></i>Slideshow</div>
+      </div>
+      <div id="tvline"></div>
+    </div>
+  </div>
+
+  <!-- captions -->
+  <div class="cap" id="cap1"><span class="num">1</span>Drop in your<br>videos and<br>photos.</div>
+  <div class="cap capc" id="cap2"><span class="num">2</span>Turn on.</div>
+  <div class="cap capc" id="cap3"><span class="num">3</span>Open the address on your TV.</div>
+  <div class="cap capc" id="cap4">Browse it like a <b class="a">streaming app.</b></div>
+  <div class="cap capc" id="cap5">Press play. <b class="a">Pick up where you stopped.</b></div>
+  <div class="cap capc" id="cap6">Photos turn into a <b class="a">slideshow.</b></div>
+
+  <!-- claims -->
+  <div id="claims" class="full">
+    <div class="cl" style="top:122px"><span><b class="a">Private</b> to your Wi-Fi</span></div>
+    <div class="cl" style="top:235px"><span><b class="a">Nothing to install</b> on the TV</span></div>
+    <div class="cl" style="top:348px"><span><b class="a">Free</b> and open source</span></div>
+  </div>
+  <div id="band"></div><div id="band2"></div>
+
+  <!-- poster still -->
+  <div id="poster" class="full">
+    <div class="pw">HOME<b class="a">FLIX</b></div>
+    <div class="pt">Your <b>Mac</b> holds the videos<br>and photos. Your <b>TV</b><br>plays them.</div>
+    <div class="pc">Private to your Wi-Fi &nbsp;·&nbsp; Nothing to install on the TV &nbsp;·&nbsp; Free and open source</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var DUR = 20;
+  var $ = function (id) { return document.getElementById(id); };
+  var cl = function (x) { return x < 0 ? 0 : x > 1 ? 1 : x; };
+  var pr = function (t, a, b) { return cl((t - a) / (b - a)); };
+  var eo = function (x) { return 1 - Math.pow(1 - x, 3); };
+  var eo5 = function (x) { return 1 - Math.pow(1 - x, 5); };
+  var ei = function (x) { return x * x * x; };
+  var eio = function (x) { return x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+  var back = function (x) { var c = 1.70158; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+  var lerp = function (a, b, x) { return a + (b - a) * x; };
+
+  function show(el, o) {
+    o = o < .004 ? 0 : o > .996 ? 1 : o;
+    el.style.opacity = o.toFixed(3);
+    el.style.visibility = o === 0 ? 'hidden' : 'visible';
+  }
+  function tf(el, x, y, s, r) {
+    el.style.transform = 'translate(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px)' +
+      (r ? ' rotate(' + r.toFixed(2) + 'deg)' : '') + (s === undefined || s === 1 ? '' : ' scale(' + s.toFixed(4) + ')');
+  }
+  /* enter at a, leave at b: opacity plus a short rise */
+  function io(el, t, a, b, dy, din, dout) {
+    dy = dy === undefined ? 20 : dy;
+    var i = eo(pr(t, a, a + (din || .38))), o = ei(pr(t, b - (dout || .26), b));
+    show(el, i * (1 - o));
+    tf(el, 0, (1 - i) * dy - o * dy);
+  }
+
+  /* ---------- artwork: flat illustrated scenes, 160x90 ---------- */
+  var ART = {
+    coast: '<rect width="160" height="90" fill="#f6b26b"/><circle cx="112" cy="33" r="13" fill="#fff0cf"/>' +
+      '<path d="M0 52 L34 38 L64 48 L98 40 L132 50 L160 44 V62 H0Z" fill="#d9774f"/>' +
+      '<rect y="54" width="160" height="36" fill="#2c6687"/>' +
+      '<rect x="95" y="59" width="34" height="2.6" rx="1.3" fill="#ffe2b0"/><rect x="101" y="65" width="22" height="2.6" rx="1.3" fill="#ffe2b0"/><rect x="107" y="71" width="11" height="2.4" rx="1.2" fill="#ffe2b0"/>' +
+      '<path d="M0 90 V40 L20 34 L36 46 L48 62 L60 76 L72 90Z" fill="#1d2a44"/>' +
+      '<g class="hs"><rect x="8" y="46" width="9" height="8" fill="#f4f1ea"/><rect x="20" y="53" width="8" height="7" fill="#ffb454"/><rect x="11" y="60" width="10" height="8" fill="#ff7a59"/><rect x="28" y="65" width="9" height="7" fill="#f4f1ea"/><rect x="40" y="74" width="8" height="6" fill="#ffb454"/></g>' +
+      '<path d="M124 80 h18 l-4 5 h-10z" fill="#f4f1ea"/><path d="M133 66 v12 h8z" fill="#f4f1ea"/>',
+    mountain: '<rect width="160" height="90" fill="#27406b"/><circle cx="124" cy="22" r="9" fill="#f4f1ea"/>' +
+      '<path d="M40 74 L80 20 L116 74Z" fill="#4a6fa1"/><path d="M80 20 L69 35 L76 32 L82 38 L90 33.5Z" fill="#eef2f7"/>' +
+      '<path d="M86 76 L126 36 L160 70 V76Z" fill="#3a5a8c"/><path d="M126 36 L117 45 L124 43 L130 47 L135 45Z" fill="#eef2f7"/>' +
+      '<path d="M0 80 L36 44 L74 80Z" fill="#2c4672"/>' +
+      '<path d="M0 90 V72 L42 66 L92 75 L160 66 V90Z" fill="#162744"/>' +
+      '<path d="M104 74 l5 -13 l5 13z M116 73 l4 -10 l4 10z M22 71 l5 -13 l5 13z" fill="#0f1c33"/>' +
+      '<rect x="60" y="70" width="12" height="7" rx="1" fill="#ff7a59"/><path d="M58 70 l8 -6 l8 6z" fill="#ffb454"/>',
+    birthday: '<rect width="160" height="90" fill="#43306b"/>' +
+      '<path d="M0 4 Q80 22 160 4" fill="none" stroke="#c9c3d9" stroke-width=".7"/>' +
+      '<path d="M14 7 l7 1.4 l-4.6 7z" fill="#ffb454"/><path d="M36 11 l7 1 l-4.2 7.2z" fill="#5fd39a"/><path d="M58 13.4 l7 .5 l-3.8 7.4z" fill="#ff7a59"/><path d="M82 13.8 l7 -.3 l-3.3 7.6z" fill="#f4f1ea"/><path d="M105 13 l7 -1 l-2.8 7.6z" fill="#ffb454"/><path d="M128 10 l7 -1.5 l-2.4 7.7z" fill="#5fd39a"/>' +
+      '<g class="bal"><path d="M92 46 L96 70" stroke="#c9c3d9" stroke-width=".7"/><ellipse cx="92" cy="36" rx="8.5" ry="10.5" fill="#f4f1ea"/></g>' +
+      '<g class="bal"><path d="M108 40 L108 66" stroke="#c9c3d9" stroke-width=".7"/><ellipse cx="108" cy="29" rx="9" ry="11" fill="#ffb454"/></g>' +
+      '<g class="bal"><path d="M126 36 L122 66" stroke="#c9c3d9" stroke-width=".7"/><ellipse cx="126" cy="25" rx="9" ry="11" fill="#ff7a59"/></g>' +
+      '<g class="bal"><path d="M142 44 L134 68" stroke="#c9c3d9" stroke-width=".7"/><ellipse cx="142" cy="34" rx="8" ry="10" fill="#5fd39a"/></g>' +
+      '<rect y="84" width="160" height="6" fill="#2a1d47"/><rect x="88" y="81" width="56" height="3.4" rx="1.7" fill="#211e2b"/>' +
+      '<rect x="96" y="63" width="40" height="18" rx="2" fill="#f4f1ea"/><rect x="96" y="69" width="40" height="4" fill="#ff7a59"/>' +
+      '<rect x="102" y="55" width="2" height="8" fill="#ffd166"/><rect x="109" y="55" width="2" height="8" fill="#ffd166"/><rect x="116" y="55" width="2" height="8" fill="#ffd166"/><rect x="123" y="55" width="2" height="8" fill="#ffd166"/><rect x="130" y="55" width="2" height="8" fill="#ffd166"/>' +
+      '<circle cx="103" cy="53" r="1.7" fill="#ffb454"/><circle cx="110" cy="53" r="1.7" fill="#ffb454"/><circle cx="117" cy="53" r="1.7" fill="#ffb454"/><circle cx="124" cy="53" r="1.7" fill="#ffb454"/><circle cx="131" cy="53" r="1.7" fill="#ffb454"/>' +
+      '<rect x="70" y="30" width="3" height="1.6" fill="#ffd166"/><rect x="60" y="52" width="3" height="1.6" fill="#5fd39a"/><rect x="150" y="56" width="3" height="1.6" fill="#ffb454"/><rect x="78" y="62" width="3" height="1.6" fill="#ff7a59"/><rect x="152" y="18" width="3" height="1.6" fill="#f4f1ea"/>',
+    city: '<rect width="160" height="90" fill="#1a1c40"/>' +
+      '<g stroke-width="1.3" stroke-linecap="round"><path d="M112 22 v-9 M112 22 v9 M112 22 h-9 M112 22 h9 M112 22 l-6.4 -6.4 M112 22 l6.4 6.4 M112 22 l-6.4 6.4 M112 22 l6.4 -6.4" stroke="#ffb454"/>' +
+      '<path d="M140 38 v-6 M140 38 v6 M140 38 h-6 M140 38 h6 M140 38 l-4.2 -4.2 M140 38 l4.2 4.2 M140 38 l-4.2 4.2 M140 38 l4.2 -4.2" stroke="#ff7a59"/>' +
+      '<path d="M82 34 v-5 M82 34 v5 M82 34 h-5 M82 34 h5 M82 34 l-3.5 -3.5 M82 34 l3.5 3.5 M82 34 l-3.5 3.5 M82 34 l3.5 -3.5" stroke="#f4f1ea"/></g>' +
+      '<rect x="0" y="56" width="22" height="34" fill="#2d2f66"/><rect x="24" y="44" width="18" height="46" fill="#373a7c"/><rect x="46" y="60" width="24" height="30" fill="#2d2f66"/><rect x="74" y="50" width="16" height="40" fill="#373a7c"/><rect x="94" y="62" width="26" height="28" fill="#2d2f66"/><rect x="124" y="54" width="16" height="36" fill="#373a7c"/><rect x="143" y="64" width="17" height="26" fill="#2d2f66"/>' +
+      '<g fill="#ffd166"><rect x="28" y="50" width="3" height="3"/><rect x="35" y="58" width="3" height="3"/><rect x="28" y="66" width="3" height="3"/><rect x="6" y="62" width="3" height="3"/><rect x="13" y="72" width="3" height="3"/><rect x="52" y="66" width="3" height="3"/><rect x="61" y="74" width="3" height="3"/><rect x="78" y="56" width="3" height="3"/><rect x="83" y="68" width="3" height="3"/><rect x="100" y="68" width="3" height="3"/><rect x="110" y="76" width="3" height="3"/><rect x="128" y="60" width="3" height="3"/><rect x="133" y="72" width="3" height="3"/><rect x="149" y="70" width="3" height="3"/></g>',
+    lake: '<rect width="160" height="90" fill="#ffc98f"/><circle cx="104" cy="40" r="11" fill="#fff0cf"/>' +
+      '<path d="M40 52 L72 26 L100 46 L124 30 L160 50 V56 H40Z" fill="#8a6a9c"/>' +
+      '<path d="M0 54 L30 34 L62 54Z" fill="#6a4f84"/>' +
+      '<rect y="52" width="160" height="38" fill="#3b5f8a"/>' +
+      '<rect x="88" y="57" width="32" height="2.6" rx="1.3" fill="#ffd9a8"/><rect x="94" y="63" width="20" height="2.6" rx="1.3" fill="#ffd9a8"/><rect x="99" y="69" width="10" height="2.4" rx="1.2" fill="#ffd9a8"/>' +
+      '<path d="M0 90 V70 Q30 62 62 78 L70 90Z" fill="#1d2a44"/>' +
+      '<ellipse cx="14" cy="56" rx="4.5" ry="15" fill="#1d2a44"/><ellipse cx="27" cy="60" rx="4" ry="12" fill="#1d2a44"/><ellipse cx="40" cy="66" rx="3.6" ry="9" fill="#1d2a44"/>' +
+      '<path d="M124 74 h20 l-4 5 h-12z" fill="#f4f1ea"/><path d="M134 61 v11 h8z" fill="#ff7a59"/>',
+    garden: '<rect width="160" height="90" fill="#f9dca0"/><circle cx="130" cy="20" r="9" fill="#fff5dc"/>' +
+      '<path d="M0 60 Q40 36 84 54 Q120 40 160 56 V90 H0Z" fill="#7fb37a"/>' +
+      '<path d="M0 72 Q50 54 100 70 Q130 62 160 72 V90 H0Z" fill="#4a8f5e"/>' +
+      '<rect x="62" y="34" width="34" height="22" fill="#f4f1ea"/><path d="M58 34 L79 22 L100 34Z" fill="#d9774f"/><rect x="76" y="44" width="7" height="12" fill="#8a5a3c"/><rect x="66" y="39" width="5" height="6" fill="#3b5f8a"/><rect x="88" y="39" width="5" height="6" fill="#3b5f8a"/>' +
+      '<ellipse cx="48" cy="44" rx="4.5" ry="16" fill="#2c5c42"/><ellipse cx="110" cy="46" rx="4.5" ry="15" fill="#2c5c42"/><ellipse cx="122" cy="52" rx="4" ry="12" fill="#2c5c42"/>' +
+      '<g fill="#ff7a59"><circle cx="20" cy="78" r="2.2"/><circle cx="34" cy="82" r="2.2"/><circle cx="140" cy="80" r="2.2"/><circle cx="62" cy="84" r="2.2"/></g><g fill="#fff5dc"><circle cx="27" cy="84" r="2"/><circle cx="128" cy="84" r="2"/><circle cx="150" cy="86" r="2"/><circle cx="48" cy="80" r="2"/></g>'
+  };
+  function svg(k) { return '<svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice">' + ART[k] + '</svg>'; }
+
+  /* ---------- build static DOM ---------- */
+  function words(el, list) {
+    el.innerHTML = list.map(function (w) { return '<span' + (w[1] ? ' class="a"' : '') + '>' + w[0] + '</span>'; }).join('');
+    return [].slice.call(el.children);
+  }
+  var hw1 = words($('hl1'), [['Your'], ['videos'], ['and'], ['photos']]);
+  var hw2 = words($('hl2'), [['are'], ['stuck', 1], ['on'], ['your'], ['laptop.']]);
+  var hwords = hw1.concat(hw2);
+
+  $('wm').innerHTML = 'HOMEFLIX'.split('').map(function (c, i) { return '<span' + (i > 3 ? ' class="a"' : '') + '>' + c + '</span>'; }).join('');
+  var wmL = [].slice.call($('wm').children);
+
+  /* laptop library tiles */
+  var TILES = ['coast', 'birthday', 'lake', 'mountain', 'garden', 'city', 'lake', 'coast'];
+  var TVID = [1, 1, 0, 1, 0, 1, 0, 0];
+  var th = '';
+  TILES.forEach(function (k, i) {
+    th += '<div class="tflash" id="tf' + i + '"></div><div class="tile" id="ti' + i + '">' + svg(k) + (TVID[i] ? '<i class="pl"></i>' : '') + '</div>';
+  });
+  $('tiles').innerHTML = th;
+  var tiles = TILES.map(function (k, i) { return { el: $('ti' + i), fl: $('tf' + i), x: 23 + (i % 4) * 106, y: 90 + Math.floor(i / 4) * 86 }; });
+
+  /* tv library */
+  var ROWS = [
+    { t: 'Continue watching', it: [['coast', 'Amalfi coast drive', .62], ['mountain', 'Ridge hike, day two', .25], ['birthday', 'Lena turns five', .41], ['city', "New Year's Eve", .74], ['garden', 'Villa gardens', .3]] },
+    { t: 'Recently added', it: [['city', "New Year's Eve"], ['garden', 'Villa gardens'], ['lake', 'Lake Como at dusk'], ['mountain', 'Ridge hike, day one'], ['coast', 'Amalfi coast drive']] },
+    { t: 'Italy 2024', it: [['garden', 'Villa gardens'], ['coast', 'Amalfi coast drive'], ['lake', 'Lake Como at dusk'], ['garden', 'Lemon terraces'], ['coast', 'Harbour at noon']] },
+    { t: 'Photos', photo: 1, it: [['lake', 'Lake Como', 0, 165], ['garden', '', 0, 83], ['coast', '', 0, 147], ['mountain', '', 0, 165], ['birthday', '', 0, 83], ['city', '', 0, 147], ['lake', '', 0, 165]] }
+  ];
+  var PITCH = 204, rh = '', cards = {};
+  ROWS.forEach(function (r, ri) {
+    var x = 48;
+    rh += '<div class="row" style="top:' + (ri * PITCH) + 'px"><h4>' + r.t + '</h4>';
+    r.it.forEach(function (c, ci) {
+      var w = c[3] || 196, id = 'c' + ri + '_' + ci;
+      rh += '<div class="ring" id="r' + id + '" style="left:' + x + 'px;width:' + w + 'px"></div>' +
+        '<div class="card" id="' + id + '" style="left:' + x + 'px;width:' + w + 'px">' + svg(c[0]) + (c[2] ? '<s></s><em style="width:' + (c[2] * 100) + '%"></em>' : '') + '</div>' +
+        (c[1] && !r.photo ? '<div class="cn" id="n' + id + '" style="left:' + x + 'px">' + c[1] + '</div>' : '');
+      x += w + 16;
+    });
+    rh += '</div>';
+  });
+  $('rows').innerHTML = rh;
+  var FOC = ['c0_0', 'c0_1', 'c0_2', 'c3_0'];
+
+  var BB = [
+    ['coast', 'CONTINUE WATCHING', 'Amalfi coast drive', 'Italy 2024 &nbsp;·&nbsp; 11 min left', 'Resume'],
+    ['mountain', 'CONTINUE WATCHING', 'Ridge hike, day two', 'Hiking &nbsp;·&nbsp; 27 min left', 'Resume'],
+    ['birthday', 'CONTINUE WATCHING', 'Lena turns five', 'Family &nbsp;·&nbsp; 18 min left', 'Resume'],
+    ['lake', 'PHOTOS', 'Lake Como', 'Italy 2024 &nbsp;·&nbsp; 48 photos', 'Start slideshow']
+  ];
+  $('bbarts').innerHTML = BB.map(function (b, i) { return '<div class="art" id="ba' + i + '">' + svg(b[0]) + '</div>'; }).join('');
+  $('btxs').innerHTML = BB.map(function (b, i) {
+    return '<div class="btx" id="bt' + i + '"><div class="l">' + b[1] + '</div><div class="h">' + b[2] + '</div><div class="m">' + b[3] + '</div><span class="p" id="bp' + i + '"><i class="tri"></i>' + b[4] + '</span></div>';
+  }).join('');
+  $('part').innerHTML = svg('birthday');
+  var bals = [].slice.call($('part').querySelectorAll('.bal'));
+  $('va').innerHTML = svg('lake');
+  $('vb').innerHTML = svg('garden');
+
+  [].slice.call(document.querySelectorAll('.cl')).forEach(function (el) {
+    el.insertAdjacentHTML('afterbegin', '<svg width="52" height="52" viewBox="0 0 44 44"><circle cx="22" cy="22" r="22" fill="#ffb454"/><path d="M12.5 22.5l6.5 6.5 12.5-13" fill="none" stroke="#0b0a0f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+  });
+  var claims = [].slice.call(document.querySelectorAll('.cl'));
+  var sigLen = $('sigpath').getTotalLength();
+
+  /* ---------- scenes ---------- */
+  function brand(t) {
+    var te = t < 2 ? t + DUR : t, u = -1, out = 0, end = false;
+    if (t >= 2.95 && t < 5.05) { u = t - 3.0; out = pr(t, 4.6, 4.95); }
+    else if (te >= 18.1 && te < 20.95) { u = te - 18.12; out = pr(te, 20.45, 20.85); end = true; }
+    var on = u >= 0;
+    var flick = !on ? 0 : u < .05 ? u / .05 : u < .1 ? .3 : u < .16 ? 1 : u < .2 ? .55 : 1;
+    $('beamrect').setAttribute('width', (106 + 854 * eo(pr(u, 0, .5))).toFixed(1));
+    show($('beam'), flick * (1 - eo(out)));
+    /* projector: fades in as the hook collapses into it (title) or just before the beam (end card) */
+    var pin = end ? eo(pr(u, .12, .36)) : pr(t, 2.86, 2.98);
+    show($('proj'), (u > -.2 ? pin : 0) * (1 - out));
+    var wy = end ? 168 : 196;
+    $('wm').style.top = wy + 'px';
+    show($('wm'), on ? 1 - out : 0);
+    tf($('wm'), 0, -22 * ei(out));
+    wmL.forEach(function (el, i) {
+      var k = eo5(pr(u, .18 + i * .05, .7 + i * .05));
+      tf(el, 0, (1 - k) * 112);
+    });
+    var s1 = eo(pr(u, .75, 1.15));
+    show($('tag'), !end && on ? s1 * (1 - out) : 0); tf($('tag'), 0, (1 - s1) * 16 - 22 * ei(out));
+    show($('endsub'), end && on ? s1 * (1 - out) : 0); tf($('endsub'), 0, (1 - s1) * 16 - 22 * ei(out));
+    var c = pr(u, 1.0, 1.4);
+    show($('cta'), end && on ? pr(u, 1.0, 1.15) * (1 - out) : 0);
+    tf($('cta'), 0, -22 * ei(out), .8 + .2 * back(c));
+  }
+
+  function hook(t) {
+    var box = $('hookbox');
+    if (t < .6 || t > 3.0) { show(box, 0); return; }
+    hwords.forEach(function (el, i) {
+      var a = .73 + i * .075 + (i > 3 ? .12 : 0);
+      var k = eo5(pr(t, a, a + .5));
+      var shake = i === 5 ? Math.sin((t - 1.75) * 34) * 5 * (1 - pr(t, 1.75, 2.15)) * (t > 1.75 ? 1 : 0) : 0;
+      tf(el, shake, (1 - k) * 74);
+    });
+    var f = eo(pr(t, 2.05, 2.4));
+    show($('hookframe'), f); show($('hookbase'), f);
+    var k = eio(pr(t, 2.42, 2.95));
+    show(box, 1 - pr(t, 2.86, 2.96));
+    box.style.transform = 'translate(-50%,-50%) translate(' + (-411 * k).toFixed(2) + 'px,' + (8 * k).toFixed(2) + 'px) scale(' + lerp(1, .085, k).toFixed(4) + ')';
+  }
+
+  function mac(t) {
+    var el = $('mac');
+    if (t < 4.7 || t > 11.0) { show(el, 0); show($('cap1'), 0); return; }
+    show(el, 1);
+    var rise = eo5(pr(t, 4.8, 5.55));
+    var k = eio(pr(t, 7.7, 8.35)), out = eio(pr(t, 10.3, 10.85));
+    tf(el, lerp(455, 62, k) - 560 * out, lerp(108, 126, k) + (1 - rise) * 470, lerp(.92, .74, k));
+    /* caption 1 */
+    var ci = eo(pr(t, 5.15, 5.6)), co = ei(pr(t, 7.55, 7.85));
+    show($('cap1'), ci * (1 - co)); tf($('cap1'), -(1 - ci) * 40 - co * 60, 0);
+    /* library view and falling files */
+    var sw = eio(pr(t, 7.78, 8.3));
+    tf($('mlibv'), 0, -288 * sw); tf($('mpowv'), 0, 288 * (1 - sw));
+    var landed = 0, drag = 0;
+    tiles.forEach(function (o, i) {
+      var a = 5.75 + i * .15, kf = pr(t, a, a + .52);
+      if (kf <= 0 || sw >= 1) { show(o.el, 0); show(o.fl, 0); return; }
+      var g = kf * kf, dir = i % 2 ? 1 : -1;
+      var settle = kf >= 1 ? 1 + .07 * Math.sin(pr(t, a + .52, a + .8) * Math.PI) * (1 - pr(t, a + .52, a + .8)) : 1;
+      show(o.el, pr(kf, 0, .12));
+      tf(o.el, o.x + dir * 34 * (1 - g), lerp(-330, o.y, g) - 288 * sw, lerp(1.55, 1, eo(kf)) * settle, dir * 11 * (1 - eo(kf)));
+      if (kf >= 1) landed++; else drag = 1;
+      show(o.fl, kf >= 1 ? 1 - pr(t, a + .52, a + .9) : 0);
+      tf(o.fl, o.x, o.y - 288 * sw);
+    });
+    $('tiles').style.clipPath = t > 7.6 ? 'inset(0)' : 'none';
+    $('mcount').textContent = landed + (landed === 1 ? ' item' : ' items');
+    $('mdrop').style.borderColor = drag ? '#ffb454' : '#322e40';
+    /* power view */
+    var flip = pr(t, 8.72, 8.98), fk = cl(back(flip));
+    $('knob').style.transform = 'translateX(' + (76 * back(flip)).toFixed(2) + 'px)';
+    $('sw').style.background = flip > .35 ? '#ffb454' : '#322e40';
+    $('knob').style.background = flip > .35 ? '#0b0a0f' : '#f4f1ea';
+    io($('ph1'), t, 7.9, 8.86, 14, .3, .14);
+    var p2 = eo(pr(t, 8.86, 9.1)); show($('ph2'), p2); tf($('ph2'), 0, (1 - p2) * 14);
+    var ad = eo(pr(t, 8.98, 9.3)); show($('addr'), ad); tf($('addr'), 0, (1 - ad) * 14);
+    /* cursor and click */
+    var cm = eio(pr(t, 8.2, 8.66)), cg = eio(pr(t, 9.0, 9.4));
+    show($('cursor'), pr(t, 8.2, 8.3) * (1 - pr(t, 9.25, 9.4)));
+    var press = t > 8.66 && t < 8.8 ? .82 : 1;
+    tf($('cursor'), lerp(410, 222, cm) + 120 * cg, lerp(280, 132, cm) + 90 * cg, press);
+    var rp = pr(t, 8.68, 9.05);
+    $('ripple').style.left = '228px'; $('ripple').style.top = '136px';
+    show($('ripple'), rp > 0 && rp < 1 ? 1 - rp : 0);
+    $('ripple').style.transform = 'scale(' + (.3 + 1.5 * eo(rp)).toFixed(3) + ')';
+  }
+
+  function signal(t) {
+    var vis = pr(t, 8.5, 8.8) * (1 - pr(t, 10.3, 10.55));
+    var lit = t > 9.0;
+    show($('wifi'), vis); show($('wifilab'), vis);
+    var col = lit ? '#ffb454' : '#5d5870';
+    var pulse = lit ? 1 + .14 * Math.sin(pr(t, 9.0, 9.4) * Math.PI) : 1;
+    $('wifi').style.transform = 'scale(' + pulse.toFixed(3) + ')';
+    [].forEach.call($('wifi').querySelectorAll('.wa'), function (p) { p.setAttribute('stroke', col); });
+    $('wifi').querySelector('.wd').setAttribute('fill', col);
+    $('wifilab').style.color = lit ? '#f4f1ea' : '#a39fb0';
+    var d = eio(pr(t, 9.0, 9.62));
+    var so = (d > 0 ? 1 : 0) * (1 - pr(t, 10.3, 10.5));
+    show($('sig'), so);
+    var len = sigLen * d;
+    $('sigrect').setAttribute('width', (232 + 490 * d).toFixed(1));
+    var pt = $('sigpath').getPointAtLength(len);
+    $('sighead').setAttribute('cx', pt.x.toFixed(2)); $('sighead').setAttribute('cy', pt.y.toFixed(2));
+    $('sighead').setAttribute('r', d >= 1 ? (8 * (1 - pr(t, 9.62, 9.8))).toFixed(2) : 8);
+    io($('cap2'), t, 8.4, 9.5, 18);
+    io($('cap3'), t, 9.5, 10.6, 18);
+  }
+
+  var FT = [[10.3, 0], [11.45, 1], [12.0, 2], [14.28, 3]];   /* focus changes: time, index */
+  function tv(t) {
+    var el = $('tv');
+    if (t < 8.05 || t > 16.3) { show(el, 0); [4, 5, 6].forEach(function (i) { show($('cap' + i), 0); }); return; }
+    show(el, 1);
+    var enter = eo5(pr(t, 8.1, 8.7)), z = eio(pr(t, 10.3, 10.95));
+    tf(el, lerp(528, 144, z) + (1 - enter) * 520, lerp(130, 26, z), lerp(.4, .7, z));
+
+    /* off screen: address bar being typed */
+    var ADDR = '192.168.1.20:8080';
+    var bar = eo(pr(t, 9.55, 9.8));
+    show($('tvbar'), bar * (1 - pr(t, 10.38, 10.5))); tf($('tvbar'), 0, (1 - bar) * 30);
+    var n = Math.floor(pr(t, 9.72, 10.2) * ADDR.length + .001);
+    $('typed').textContent = ADDR.slice(0, n);
+    $('caret').style.opacity = n >= ADDR.length ? 0 : 1;
+
+    /* light up */
+    var lit = eo(pr(t, 10.42, 10.9));
+    show($('tvui'), t >= 10.42 ? 1 : 0);
+    $('tvui').style.clipPath = lit >= 1 ? 'none' : 'inset(' + (50 * (1 - lit)).toFixed(2) + '% 0)';
+    var ln = pr(t, 10.34, 10.44) * (1 - pr(t, 10.44, 10.7));
+    show($('tvline'), ln);
+
+    /* focus + billboard */
+    var cur = 0, since = 0;
+    FT.forEach(function (f) { if (t >= f[0]) { cur = f[1]; since = t - f[0]; } });
+    FOC.forEach(function (id, i) {
+      var tin = FT[i][0], tout = i < FT.length - 1 ? FT[i + 1][0] : 99;
+      if (i === 2) tout = 13.86;
+      var f = eo(pr(t, tin, tin + .2)) * (1 - eo(pr(t, tout, tout + .16)));
+      if (i === 0) f = 1 - eo(pr(t, tout, tout + .16));
+      $(id).style.transform = 'scale(' + (1 + .07 * f).toFixed(4) + ')';
+      $('r' + id).style.transform = 'scale(' + (1 + .07 * f).toFixed(4) + ')';
+      show($('r' + id), f);
+      var nm = $('n' + id); if (nm) nm.style.color = f > .5 ? '#f4f1ea' : '#a39fb0';
+    });
+    BB.forEach(function (b, i) {
+      var tin = FT[i][0] + (i ? .06 : 0), tout = i < FT.length - 1 ? FT[i + 1][0] + .06 : 99;
+      var a = i === 0 ? 1 - pr(t, tout, tout + .24) : pr(t, tin, tin + .24);
+      show($('ba' + i), i === 0 ? 1 : (t < tout + .3 ? a : 0));
+      var k = i === 0 ? 1 : eo(pr(t, tin + .05, tin + .3));
+      show($('bt' + i), k * (t >= tout ? 0 : 1)); tf($('bt' + i), 0, (1 - k) * 16);
+    });
+    /* OK press on the billboard button */
+    var p1 = t > 12.42 && t < 12.56, p2 = t > 14.72 && t < 14.84;
+    $('bp2').style.transform = p1 ? 'scale(.93)' : ''; $('bp3').style.transform = p2 ? 'scale(.93)' : '';
+    /* rows slide beneath the billboard */
+    var rs = eio(pr(t, 13.86, 14.42));
+    tf($('rows'), 0, -3 * PITCH * rs + (1 - lit) * 40);
+
+    /* player */
+    var pin = pr(t, 12.56, 12.72), pout = pr(t, 13.72, 13.82);
+    show($('player'), pin * (1 - pout));
+    var dl = 1 - pr(t, 13.02, 13.14);
+    show($('dlg'), dl);
+    $('dres').style.transform = t > 12.94 && t < 13.04 ? 'scale(.94)' : '';
+    var play = Math.max(0, t - 13.08);
+    bals.forEach(function (g, i) {
+      g.setAttribute('transform', 'translate(' + (Math.sin(play * 3.1 + i * 1.7) * .9).toFixed(2) + ',' + (Math.sin(play * 4.3 + i * 2.3) * 1.3).toFixed(2) + ')');
+    });
+    var frac = .41 + play * .012;
+    $('pfill').style.width = (864 * frac).toFixed(1) + 'px'; $('pknob').style.left = (864 * frac).toFixed(1) + 'px';
+    var sec = 760 + Math.floor(play * 2.6);
+    $('pt1').textContent = Math.floor(sec / 60) + ':' + ('0' + sec % 60).slice(-2);
+
+    /* photo viewer */
+    var vin = pr(t, 14.84, 15.0);
+    show($('viewer'), vin);
+    $('viewer').style.transform = 'scale(' + (1.04 - .04 * eo(vin)).toFixed(4) + ')';
+    var xf = pr(t, 15.3, 15.58);
+    show($('vb'), xf);
+    $('vtitle').textContent = xf > .5 ? 'Villa gardens' : 'Lake Como';
+    $('vsub').textContent = 'Italy 2024  ·  ' + (xf > .5 ? '13' : '12') + ' of 48';
+
+    io($('cap4'), t, 10.85, 12.5, 14);
+    io($('cap5'), t, 12.6, 13.9, 14);
+    io($('cap6'), t, 14.0, 16.2, 14);
+  }
+
+  function claimsScene(t) {
+    var el = $('claims');
+    /* amber band wipes the TV scene away, claims arrive behind it */
+    var w = pr(t, 15.72, 16.22), x = lerp(-240, 1160, eio(w));
+    var active = t >= 15.72 && t < 18.5;
+    show(el, active ? 1 : 0);
+    el.style.background = t > 16.4 ? 'transparent' : '';   /* lets the end-card beam arrive behind the leaving claims */
+    el.style.clipPath = w >= 1 ? 'none' : 'polygon(0 0,' + (x + 60).toFixed(1) + 'px 0,' + (x - 20).toFixed(1) + 'px 100%,0 100%)';
+    show($('band'), w > 0 && w < 1 ? 1 : 0); show($('band2'), w > 0 && w < 1 ? 1 : 0);
+    $('band').style.transform = 'translateX(' + x.toFixed(1) + 'px) skewX(-8deg)';
+    $('band2').style.transform = 'translateX(' + (x + 172).toFixed(1) + 'px) skewX(-8deg)';
+    claims.forEach(function (c, i) {
+      var a = 16.02 + i * .56, k = eo5(pr(t, a, a + .5)), o = ei(pr(t, 18.1 + i * .04, 18.4 + i * .04));
+      show(c, pr(t, a, a + .16) * (1 - o));
+      tf(c, (1 - k) * 70 - o * 90, 0);
+      c.firstChild.style.transform = 'scale(' + back(pr(t, a + .08, a + .46)).toFixed(3) + ')';
+    });
+  }
+
+  function poster() {
+    seek(11.3);
+    show($('poster'), 1); show($('cap4'), 0);
+    tf($('tv'), 398, 84, .55); $('tv').style.zIndex = 2;
+    show($('beam'), 0);
+  }
+
+  function seek(t) {
+    if (t === 'poster') { poster(); return; }
+    t = ((t % DUR) + DUR) % DUR;
+    show($('poster'), 0); $('tv').style.zIndex = '';
+    brand(t); hook(t); mac(t); signal(t); tv(t); claimsScene(t);
+  }
+  window.seek = seek;
+  window.DURATION = DUR;
+
+  /* preview: play in real time unless driven by the renderer (?still or webdriver) */
+  var q = location.search;
+  if (/[?&]t=/.test(q)) seek(/[?&]t=([^&]+)/.exec(q)[1] === 'poster' ? 'poster' : parseFloat(/[?&]t=([^&]+)/.exec(q)[1]));
+  else if (navigator.webdriver || /still/.test(q)) seek(0);
+  else { var t0 = performance.now(); (function loop() { seek((performance.now() - t0) / 1000); requestAnimationFrame(loop); })(); }
+})();
+</script>
+</body>
+</html>
