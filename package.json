@@ -1,0 +1,14 @@
+{
+  "name": "homeflix",
+  "version": "1.0.0",
+  "description": "Personal home media server: stream your videos and photos from a MacBook to a Smart TV on the same Wi-Fi.",
+  "private": true,
+  "license": "MIT",
+  "bin": { "homeflix": "bin/homeflix.js" },
+  "scripts": {
+    "start": "node bin/homeflix.js",
+    "serve": "node bin/homeflix.js --serve",
+    "test": "node --test test/"
+  },
+  "engines": { "node": ">=18" }
+}
