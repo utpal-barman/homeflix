@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node bin/homeflix.js",
     "serve": "node bin/homeflix.js --serve",
-    "test": "node --test test/"
+    "test": "node --test test/unit.test.js test/server.test.js test/resilience.test.js"
   },
   "engines": { "node": ">=18" }
 }
