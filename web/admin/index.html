@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>HomeFlix</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0a0f'/%3E%3Cpath d='M6 9l20 4v6L6 23z' fill='%23ffb454'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+<a class="skip" href="#library">Skip to your library</a>
+
+<header class="top" id="top">
+  <div class="top-in">
+    <a class="wordmark" href="#top" aria-label="HomeFlix, back to top"><span>HOME</span><span class="flix">FLIX</span></a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#library">Library</a>
+      <a href="#folders">Folders</a>
+      <a href="#settings">Settings</a>
+      <a href="#help">Help</a>
+    </nav>
+    <div class="power">
+      <span class="pill" id="pill" data-state="wait"><span class="pill-dot" aria-hidden="true"></span><span id="pill-text">Checking</span></span>
+      <button class="switch" id="switch" type="button" role="switch" aria-checked="false" aria-label="Share with the TV" disabled>
+        <span class="switch-knob" aria-hidden="true"></span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="banner" id="banner" role="alert" hidden>
+  <strong>HomeFlix was closed.</strong> Open it again to continue: double-click HomeFlix on your Mac. This page will reconnect by itself.
+</div>
+
+<main id="main">
+
+  <!-- ───────── Connect your TV ───────── -->
+  <section class="stage" id="connect" data-view="wait" aria-label="Connect your TV">
+    <div class="stage-beam" aria-hidden="true"></div>
+
+    <div class="stage-idle" id="stage-idle">
+      <h1 id="stage-title">Checking on HomeFlix</h1>
+      <p class="lede" id="stage-sub"></p>
+      <div class="callout bad" id="stage-problem" hidden>
+        <p id="stage-problem-text"></p>
+        <button class="btn" type="button" id="stage-problem-fix" hidden>Change the port number</button>
+      </div>
+      <button class="btn primary big" type="button" id="stage-on" hidden>Switch on</button>
+    </div>
+
+    <div class="stage-live" id="stage-live" hidden>
+      <div class="live-main">
+        <p class="micro">Connect your TV</p>
+        <h1 class="live-ask">Type this address into your TV’s web browser</h1>
+        <p class="addr" id="addr" aria-label="TV address"><span class="addr-scheme">http://</span><span id="addr-host"></span></p>
+        <div class="addr-row">
+          <button class="btn" type="button" id="copy">Copy address</button>
+          <span class="wifi" id="wifi" hidden></span>
+        </div>
+        <p class="callout warn" id="port-note" hidden></p>
+        <p class="callout warn" id="live-error" hidden></p>
+        <ol class="steps">
+          <li><span>Put the TV on the same Wi-Fi as this Mac<span id="wifi-step"></span>.</span></li>
+          <li><span>Open the TV’s web browser. It is usually called Internet, Web Browser or just Browser.</span></li>
+          <li><span>Type the address exactly as shown, dots and colon included, then press OK.</span></li>
+        </ol>
+        <details class="alt" id="alt" hidden>
+          <summary>The TV can’t open it?</summary>
+          <p>Try one of these instead. They all lead to the same place.</p>
+          <ul id="alt-list"></ul>
+          <p><a href="#trouble">More things to check</a></p>
+        </details>
+      </div>
+      <aside class="live-side">
+        <figure class="qr" id="qr" hidden>
+          <img id="qr-img" alt="QR code for the TV address" width="220" height="220">
+          <figcaption>Scan with a phone on the same Wi-Fi to check the address works.</figcaption>
+        </figure>
+        <div class="clients">
+          <p class="micro">Watching now</p>
+          <ul id="clients"></ul>
+        </div>
+      </aside>
+    </div>
+
+    <div class="stage-nonet" id="stage-nonet" hidden>
+      <h1 class="stage-h">This Mac isn’t on a network</h1>
+      <p class="lede">HomeFlix is on, but the TV has no way to reach it. Join your home Wi-Fi on this Mac (the Wi-Fi symbol at the top right of the screen) and the address will appear here by itself.</p>
+    </div>
+  </section>
+
+  <!-- ───────── First run ───────── -->
+  <section class="journey" id="journey" aria-label="Getting started" hidden>
+    <ol>
+      <li id="j1">
+        <span class="j-num" aria-hidden="true">1</span>
+        <div><strong>Add videos and photos</strong><span class="j-sub" id="j1-sub">Drop them on this page, or choose them.</span></div>
+        <button class="btn small" type="button" id="j1-btn">Choose files</button>
+      </li>
+      <li id="j2">
+        <span class="j-num" aria-hidden="true">2</span>
+        <div><strong>Switch on</strong><span class="j-sub" id="j2-sub">Lets your TV see them.</span></div>
+        <button class="btn small" type="button" id="j2-btn">Switch on</button>
+      </li>
+      <li id="j3">
+        <span class="j-num" aria-hidden="true">3</span>
+        <div><strong>Open on your TV</strong><span class="j-sub" id="j3-sub">Type the address into the TV’s web browser.</span></div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ───────── Library ───────── -->
+  <section class="block" id="library" aria-labelledby="lib-title">
+    <div class="block-head">
+      <div>
+        <h2 id="lib-title">Your library</h2>
+        <p class="sub" id="lib-counts">&nbsp;</p>
+      </div>
+      <div class="add">
+        <label class="field inline">
+          <span>Album or folder name (optional)</span>
+          <input type="text" id="collection" list="collection-list" autocomplete="off" maxlength="80" placeholder="e.g. Holiday 2025">
+          <datalist id="collection-list"></datalist>
+        </label>
+        <button class="btn primary" type="button" id="add-btn">Add videos and photos</button>
+        <input type="file" id="file-input" multiple hidden
+          accept=".mp4,.m4v,.webm,.mov,.mkv,.avi,.wmv,.flv,.mpg,.mpeg,.ts,.3gp,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,video/*,image/*">
+      </div>
+    </div>
+
+    <div class="hint" id="ffmpeg-hint" hidden>
+      <p><strong>Optional extra.</strong> With the free tool <em>ffmpeg</em> on this Mac, HomeFlix can convert videos that won’t play on a TV and show a picture for every video. Without it everything else still works. To add it, open Terminal and run <code>brew install ffmpeg</code>, then reopen HomeFlix.</p>
+      <div class="hint-actions">
+        <button class="btn small" type="button" id="ffmpeg-copy">Copy the command</button>
+        <button class="btn small quiet" type="button" id="ffmpeg-dismiss">Hide this</button>
+      </div>
+    </div>
+
+    <section class="panel" id="uploads" aria-labelledby="up-title" hidden>
+      <div class="panel-head">
+        <h3 id="up-title">Adding files</h3>
+        <div class="panel-actions">
+          <button class="btn small quiet" type="button" id="up-cancel-all">Cancel all</button>
+          <button class="btn small quiet" type="button" id="up-clear">Clear finished</button>
+        </div>
+      </div>
+      <div class="bar total" aria-hidden="true"><i id="up-total"></i></div>
+      <ul class="rows" id="up-rows"></ul>
+    </section>
+
+    <section class="panel" id="jobs" aria-labelledby="jobs-title" hidden>
+      <div class="panel-head"><h3 id="jobs-title">Converting for TV</h3></div>
+      <ul class="rows" id="job-rows"></ul>
+    </section>
+
+    <div class="filters" id="filters" hidden>
+      <div class="seg" role="group" aria-label="Show">
+        <button type="button" data-kind="all" aria-pressed="true">All</button>
+        <button type="button" data-kind="video" aria-pressed="false">Videos</button>
+        <button type="button" data-kind="photo" aria-pressed="false">Photos</button>
+      </div>
+      <label class="field inline bare">
+        <span class="vh">Album or folder</span>
+        <select id="f-collection"><option value="">All albums and folders</option></select>
+      </label>
+      <label class="field inline bare grow">
+        <span class="vh">Search by title</span>
+        <input type="search" id="f-search" placeholder="Search by title" autocomplete="off">
+      </label>
+      <span class="sub" id="f-count" aria-live="polite"></span>
+    </div>
+
+    <div class="drop" id="empty" hidden>
+      <div class="drop-art" aria-hidden="true"><i></i><i></i><i></i></div>
+      <h3>Nothing here yet</h3>
+      <p>Drag videos and photos from Finder onto this page, or choose them. You can drop whole folders too; each one becomes an album.</p>
+      <button class="btn primary" type="button" id="empty-btn">Choose videos and photos</button>
+      <p class="sub">MP4 videos are the safest choice for TVs. <a href="#help">What works</a></p>
+    </div>
+
+    <p class="sub scanning" id="scanning" hidden><span class="spin" aria-hidden="true"></span>Looking through your folders…</p>
+    <div class="grid" id="grid"></div>
+    <div class="nomatch" id="nomatch" hidden>
+      <p>Nothing matches.</p>
+      <button class="btn small" type="button" id="f-reset">Show everything</button>
+    </div>
+    <div id="grid-more" aria-hidden="true"></div>
+  </section>
+
+  <!-- ───────── Folders + Settings ───────── -->
+  <div class="pair">
+    <section class="block" id="folders" aria-labelledby="fold-title">
+      <h2 id="fold-title">Folders</h2>
+
+      <h3>Library folder</h3>
+      <p class="sub">Everything you add on this page is saved here. HomeFlix can also move files from here to the Trash when you ask.</p>
+      <div class="folder main-folder">
+        <span class="path" id="lib-path">&nbsp;</span>
+        <div class="folder-actions">
+          <button class="btn small" type="button" id="lib-reveal">Show in Finder</button>
+          <button class="btn small" type="button" id="lib-change">Change…</button>
+        </div>
+      </div>
+
+      <h3>Extra folders</h3>
+      <p class="sub">Folders you already have, such as an external drive. HomeFlix shows what’s inside on the TV and never changes or deletes anything in them.</p>
+      <ul class="folders" id="extra-list"></ul>
+      <div class="folder-foot">
+        <button class="btn small" type="button" id="extra-add">Add folder…</button>
+        <button class="btn small quiet" type="button" id="rescan">Check folders again</button>
+      </div>
+      <p class="sub picking" id="picking" hidden><span class="spin" aria-hidden="true"></span>A folder window has opened on your Mac. If you can’t see it, look behind this window.</p>
+    </section>
+
+    <section class="block" id="settings" aria-labelledby="set-title">
+      <h2 id="set-title">Settings</h2>
+      <form id="settings-form" novalidate>
+        <label class="field">
+          <span>Name shown on the TV</span>
+          <input type="text" id="s-name" maxlength="40" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Port number</span>
+          <input type="text" id="s-port" inputmode="numeric" autocomplete="off" aria-describedby="s-port-help s-port-err" class="narrow">
+          <small id="s-port-help">The number after the colon in the TV address. Only change it if HomeFlix says the port is busy. Any number from 1024 to 65535 works; 8080 is the usual one.</small>
+          <small class="err" id="s-port-err" role="alert" hidden></small>
+        </label>
+        <div class="form-foot">
+          <button class="btn primary" type="submit" id="s-save" disabled>Save changes</button>
+          <button class="btn quiet" type="button" id="s-reset" hidden>Undo</button>
+          <span class="sub" id="s-note" aria-live="polite"></span>
+        </div>
+      </form>
+      <label class="check">
+        <input type="checkbox" id="s-auto">
+        <span class="check-box" aria-hidden="true"></span>
+        <span><strong>Switch on automatically</strong><small>Whenever HomeFlix is opened, it starts sharing with the TV straight away.</small></span>
+      </label>
+      <p class="sub version" id="version"></p>
+    </section>
+  </div>
+
+  <!-- ───────── Help ───────── -->
+  <section class="block help" id="help" aria-labelledby="help-title">
+    <h2 id="help-title">Help</h2>
+
+    <div class="help-cols">
+      <div>
+        <h3>What plays on a TV</h3>
+        <p class="sub">TV web browsers are much pickier than a Mac. If you can choose, save videos as MP4.</p>
+        <table class="formats">
+          <thead><tr><th scope="col">File type</th><th scope="col">On the TV</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">MP4, M4V <small>video</small></th><td><span class="badge ok">Plays on TV</span><small>The safe choice, as long as the video inside is H.264 with AAC sound (most are).</small></td></tr>
+            <tr><th scope="row">WebM, MOV <small>video</small></th><td><span class="badge warn">May not play</span><small>Works on some TVs and not others. Try it.</small></td></tr>
+            <tr><th scope="row">MKV, AVI, WMV, FLV, MPG, MPEG, TS, 3GP <small>video</small></th><td><span class="badge bad">Needs converting</span><small>TV browsers can’t open these. HomeFlix can make an MP4 copy if ffmpeg is installed.</small></td></tr>
+            <tr><th scope="row">JPG, PNG, GIF, WebP <small>photo</small></th><td><span class="badge ok">Shows on TV</span></td></tr>
+            <tr><th scope="row">HEIC, HEIF, TIFF, BMP <small>photo</small></th><td><span class="badge ok">Shows on TV</span><small>HomeFlix turns these into JPEG for the TV. Your originals are not changed.</small></td></tr>
+          </tbody>
+        </table>
+        <p class="sub">Other kinds of file, such as documents and music, are left out.</p>
+      </div>
+
+      <div>
+        <h3>What to expect from a TV browser</h3>
+        <ul class="plain">
+          <li><strong>MP4 with H.264 video and AAC sound is the safe choice.</strong> It plays on practically every Smart TV.</li>
+          <li><strong>MKV and AVI files, HEVC (H.265) video, and AC3 or DTS sound often won’t play</strong>, or play with no sound. Convert them to MP4 first.</li>
+          <li><strong>4K and very detailed videos may stutter over Wi-Fi.</strong> A 1080p copy usually plays smoothly. Moving the Mac or TV closer to the router helps too.</li>
+          <li><strong>Some TVs won’t start a video until you press OK or Play</strong>, and some dim the screen or go to sleep during long videos. Check the TV’s screen saver or eco settings.</li>
+          <li><strong>This Mac has to stay awake, with HomeFlix open, on the same Wi-Fi.</strong> If the lid closes or the Mac sleeps, the TV loses the picture. Keep it plugged in while you watch.</li>
+          <li><strong>Guest Wi-Fi usually won’t work.</strong> Guest and “isolated” networks stop devices from talking to each other, so the TV can’t reach the Mac. Use your normal home Wi-Fi for both.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="trouble" id="trouble">
+      <h3>The TV can’t open the address</h3>
+      <ol class="checks">
+        <li><strong>Is HomeFlix switched on?</strong> The switch at the top of this page should say “On air”.</li>
+        <li><strong>Same Wi-Fi on both.</strong> The TV and this Mac must be on the same home network<span id="trouble-wifi"></span>. A TV on a cable to the same router is fine.</li>
+        <li><strong>Type the whole address</strong>, including <code>http://</code> at the start and the colon and number at the end. If the TV searches the web instead, it went into a search box: look for the address bar.</li>
+        <li><strong>Try another address.</strong> <span id="trouble-alt">When HomeFlix is on, other addresses to try are listed here.</span></li>
+        <li><strong>Allow it through the Mac’s firewall.</strong> If macOS asked “Do you want the application to accept incoming network connections?”, the answer needs to be Allow. To fix it later, open System Settings, then Network, then Firewall, then Options, and set the entry for node (HomeFlix runs through it) to allow incoming connections.</li>
+        <li><strong>Turn off any VPN</strong> on this Mac while you watch. A VPN can hide the Mac from the TV.</li>
+        <li><strong>Still stuck?</strong> Switch HomeFlix off and on again, then restart the TV’s browser.</li>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <p>HomeFlix runs only on this Mac and your home Wi-Fi. Nothing is sent to the internet.</p>
+</footer>
+
+<!-- ───────── Overlays ───────── -->
+<div class="veil" id="veil" hidden aria-hidden="true">
+  <div class="veil-in"><strong>Drop to add to HomeFlix</strong><span id="veil-sub">Videos and photos, or whole folders</span></div>
+</div>
+
+<dialog class="dlg" id="confirm" aria-labelledby="confirm-title">
+  <form method="dialog">
+    <h3 id="confirm-title"></h3>
+    <p id="confirm-text"></p>
+    <div class="dlg-actions">
+      <button class="btn" value="cancel" id="confirm-no">Cancel</button>
+      <button class="btn danger" value="ok" id="confirm-yes"></button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="viewer" id="viewer" aria-labelledby="viewer-title">
+  <div class="viewer-bar">
+    <div class="viewer-meta">
+      <h3 id="viewer-title"></h3>
+      <p class="sub" id="viewer-sub"></p>
+    </div>
+    <div class="viewer-nav">
+      <button class="btn small" type="button" id="viewer-prev" aria-label="Previous">‹</button>
+      <button class="btn small" type="button" id="viewer-next" aria-label="Next">›</button>
+      <button class="btn small" type="button" id="viewer-close">Close</button>
+    </div>
+  </div>
+  <div class="viewer-body" id="viewer-body"></div>
+</dialog>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<script type="module" src="admin.js"></script>
+</body>
+</html>
