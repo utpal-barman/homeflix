@@ -135,8 +135,8 @@ Status = {
   name: string, version: string,
   running: boolean,            // TV server listening
   port: number,                // actual port when running, configured otherwise
-  address: string|null,        // best LAN IPv4, e.g. "192.168.0.106"; null when no network
-  url: string|null,            // "http://192.168.0.106:8080"
+  address: string|null,        // best LAN IPv4, e.g. "192.168.1.20"; null when no network
+  url: string|null,            // "http://192.168.1.20:8080"
   altUrls: string[],           // other interfaces + "http://<LocalHostName>.local:8080"
   wifiName: string|null,       // current SSID when it can be read
   qrSvg: string|null,          // inline <svg> QR code of `url`

@@ -1,5 +1,9 @@
 # HomeFlix
 
+<p align="center">
+  <img src="docs/media/homeflix-promo.gif" alt="HomeFlix: your own videos and photos, streamed from your Mac to your TV" width="820">
+</p>
+
 Turn a folder of your own videos and photos into a private streaming library
 for your living room. Your MacBook holds the files; your Smart TV opens a web
 page and plays them. Nothing leaves your home Wi-Fi.
@@ -15,6 +19,27 @@ Optional but recommended: **ffmpeg**, which adds video thumbnails, durations
 and the "Convert" button for videos your TV cannot play. Install it with
 [Homebrew](https://brew.sh): `brew install ffmpeg`.
 
+## Install
+
+**The easy way (no Terminal needed)**
+
+1. Install [Node.js](https://nodejs.org): download the "LTS" installer for
+   macOS and click through it.
+2. On this page, click the green **Code** button, then **Download ZIP**.
+3. Double-click the ZIP in your Downloads folder to unpack it, and move the
+   `homeflix` folder somewhere you will find it again (Documents is fine).
+
+**With git**
+
+```bash
+git clone https://github.com/utpal-barman/homeflix.git
+cd homeflix
+npm start
+```
+
+There is nothing else to install: HomeFlix has no dependencies, so there is no
+`npm install` step.
+
 ## Start in three steps
 
 1. **Open HomeFlix.** Double-click `HomeFlix.command` in this folder. A
@@ -27,7 +52,7 @@ and the "Convert" button for videos your TV cannot play. Install it with
    Add folder…).
 3. **Turn on and watch.** Turn HomeFlix **ON** with the big button. On your TV, open the
    web browser and type the address shown on the card, for example
-   `http://192.168.0.106:8080`. On a phone or tablet, scan the QR code instead.
+   `http://192.168.1.20:8080`. On a phone or tablet, scan the QR code instead.
 
 If macOS asks "Do you want the application 'node' to accept incoming network
 connections?", choose **Allow**. Without it the TV cannot reach the Mac.
@@ -155,6 +180,10 @@ docs/ARCHITECTURE.md   API contract and design language
 Settings live in `~/Library/Application Support/HomeFlix/`, the thumbnail
 cache in `~/Library/Caches/HomeFlix/` (safe to delete). Set `HOMEFLIX_HOME` to
 keep everything in one directory instead.
+
+## License
+
+[MIT](LICENSE). Your media never leaves your network, and neither does anything else.
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org);
 see `CLAUDE.md` for the project rules.
