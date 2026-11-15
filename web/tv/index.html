@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="keys">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0a0f">
 <title>HomeFlix</title>
 <link rel="stylesheet" href="tv.css">
 </head>
@@ -11,11 +12,11 @@
   <div id="nav">
     <div class="wm">HOME<b>FLIX</b></div>
     <div id="tabs" class="zone"><div class="tab f" id="t-home">Home</div><div class="tab f" id="t-videos">Videos</div><div class="tab f" id="t-photos">Photos</div></div>
-    <div id="clock"></div>
+    <div id="nr"><span id="lname"></span><span id="clock"></span></div>
   </div>
   <div id="view">
     <div class="sk">
-      <div class="sk-hero"><i class="s1"></i><i class="s2"></i><i class="s3"></i><i class="s4"></i><i class="s5"></i></div>
+      <div class="sk-bb"><i class="s1"></i><i class="s2"></i><i class="s3"></i></div>
       <div class="sk-row"><i></i><i></i><i></i><i></i><i></i><i></i></div>
     </div>
   </div>
@@ -27,21 +28,24 @@
   <div id="osd">
     <div class="ptop"><div class="mic" id="pcol"></div><div id="pttl"></div></div>
     <div class="pbot">
-      <div class="zone" id="pbz"><div id="pbar" class="f"><i id="pfill"></i><b id="pknob"></b><span id="ptip"></span></div></div>
       <div class="ptimes"><span id="prem"></span><span id="pcur"></span></div>
-      <div class="zone" id="pbtns"><div class="pb f" id="b-rw"></div><div class="pb pp f" id="b-pp"></div><div class="pb f" id="b-ff"></div><div class="pb f" id="b-re"></div><div class="pb f" id="b-cc">CC</div></div>
+      <div class="zone" id="pbz"><div id="pbar" class="f"><i id="pfill"></i><b id="pknob"></b><span id="ptip"></span></div></div>
+      <div class="zone" id="pbtns"><div class="pb f" id="b-re"></div><div class="pb f" id="b-rw"></div><div class="pb pp f" id="b-pp"></div><div class="pb f" id="b-ff"></div><div class="pb f" id="b-cc">CC</div></div>
       <div id="pcap"></div>
     </div>
   </div>
+  <div id="pclose" class="xbtn"></div>
 </div>
 
 <div id="viewer" class="layer">
   <div class="vl" id="va"></div><div class="vl" id="vb"></div>
   <div id="vspin" class="spin"></div>
   <div id="vmsg"></div>
-  <div id="vtop"><span id="vpos"></span><span id="vss">Slideshow</span></div>
+  <div id="vpos"></div>
+  <div id="vclose" class="xbtn"></div>
+  <div id="vssb" class="vbtn">Slideshow</div>
   <div id="vprev" class="vnav"></div><div id="vnext" class="vnav"></div>
-  <div id="vhint">OK starts the slideshow. Up shows details.</div>
+  <div id="vhint"></div>
   <div id="vinfo"><div id="vttl"></div><div id="vmeta"></div></div>
   <div id="vprog"><i id="vbar"></i></div>
 </div>
