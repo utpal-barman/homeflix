@@ -22,7 +22,7 @@
     </nav>
     <div class="power">
       <span class="pill" id="pill" data-state="wait"><span class="pill-dot" aria-hidden="true"></span><span id="pill-text">Checking</span></span>
-      <button class="switch" id="switch" type="button" role="switch" aria-checked="false" aria-label="Share with the TV" disabled>
+      <button class="switch" id="switch" type="button" role="switch" aria-checked="false" aria-label="Turn on HomeFlix" disabled>
         <span class="switch-knob" aria-hidden="true"></span>
       </button>
     </div>
@@ -46,7 +46,7 @@
         <p id="stage-problem-text"></p>
         <button class="btn" type="button" id="stage-problem-fix" hidden>Change the port number</button>
       </div>
-      <button class="btn primary big" type="button" id="stage-on" hidden>Switch on</button>
+      <button class="btn primary big" type="button" id="stage-on" hidden>Turn on</button>
     </div>
 
     <div class="stage-live" id="stage-live" hidden>
@@ -100,8 +100,8 @@
       </li>
       <li id="j2">
         <span class="j-num" aria-hidden="true">2</span>
-        <div><strong>Switch on</strong><span class="j-sub" id="j2-sub">Lets your TV see them.</span></div>
-        <button class="btn small" type="button" id="j2-btn">Switch on</button>
+        <div><strong>Turn on</strong><span class="j-sub" id="j2-sub">Lets your TV see them.</span></div>
+        <button class="btn small" type="button" id="j2-btn">Turn on</button>
       </li>
       <li id="j3">
         <span class="j-num" aria-hidden="true">3</span>
@@ -135,6 +135,11 @@
         <button class="btn small" type="button" id="ffmpeg-copy">Copy the command</button>
         <button class="btn small quiet" type="button" id="ffmpeg-dismiss">Hide this</button>
       </div>
+    </div>
+
+    <div class="callout warn wide" id="lib-error" role="status" hidden>
+      <p id="lib-error-text"></p>
+      <a class="btn small" href="#folders">Go to Folders</a>
     </div>
 
     <section class="panel" id="uploads" aria-labelledby="up-title" hidden>
@@ -193,6 +198,8 @@
     <section class="block" id="folders" aria-labelledby="fold-title">
       <h2 id="fold-title">Folders</h2>
 
+      <p class="callout warn" id="fold-error" role="status" hidden></p>
+
       <h3>Library folder</h3>
       <p class="sub">Everything you add on this page is saved here. HomeFlix can also move files from here to the Trash when you ask.</p>
       <div class="folder main-folder">
@@ -235,7 +242,7 @@
       <label class="check">
         <input type="checkbox" id="s-auto">
         <span class="check-box" aria-hidden="true"></span>
-        <span><strong>Switch on automatically</strong><small>Whenever HomeFlix is opened, it starts sharing with the TV straight away.</small></span>
+        <span><strong>Turn on automatically</strong><small>Whenever HomeFlix is opened, it starts sharing with the TV straight away.</small></span>
       </label>
       <p class="sub version" id="version"></p>
     </section>
@@ -278,13 +285,13 @@
     <div class="trouble" id="trouble">
       <h3>The TV can’t open the address</h3>
       <ol class="checks">
-        <li><strong>Is HomeFlix switched on?</strong> The switch at the top of this page should say “On air”.</li>
+        <li><strong>Is HomeFlix turned on?</strong> The top of this page should say “On air”.</li>
         <li><strong>Same Wi-Fi on both.</strong> The TV and this Mac must be on the same home network<span id="trouble-wifi"></span>. A TV on a cable to the same router is fine.</li>
         <li><strong>Type the whole address</strong>, including <code>http://</code> at the start and the colon and number at the end. If the TV searches the web instead, it went into a search box: look for the address bar.</li>
         <li><strong>Try another address.</strong> <span id="trouble-alt">When HomeFlix is on, other addresses to try are listed here.</span></li>
         <li><strong>Allow it through the Mac’s firewall.</strong> If macOS asked “Do you want the application to accept incoming network connections?”, the answer needs to be Allow. To fix it later, open System Settings, then Network, then Firewall, then Options, and set the entry for node (HomeFlix runs through it) to allow incoming connections.</li>
         <li><strong>Turn off any VPN</strong> on this Mac while you watch. A VPN can hide the Mac from the TV.</li>
-        <li><strong>Still stuck?</strong> Switch HomeFlix off and on again, then restart the TV’s browser.</li>
+        <li><strong>Still stuck?</strong> Turn HomeFlix off and on again, then restart the TV’s browser.</li>
       </ol>
     </div>
   </section>

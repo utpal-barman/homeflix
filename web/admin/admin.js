@@ -16,7 +16,7 @@ const state = {
   online: true,
   misses: 0,
   pending: null,        // "starting" | "stopping" | null
-  startError: null,     // { code, message } from the last failed switch-on
+  startError: null,     // { code, message } from the last failed attempt to turn on
   items: [],
   collections: [],
   libraryKey: '',
@@ -275,7 +275,7 @@ function renderPower() {
   sw.setAttribute('aria-checked', String(state.pending === 'starting' ? true : on));
   sw.toggleAttribute('data-busy', !!state.pending);
   sw.disabled = !s || !state.online || !!state.pending;
-  sw.title = state.pending ? 'One moment…' : on ? 'Switch off' : 'Switch on';
+  sw.title = state.pending ? 'One moment…' : on ? 'Turn off' : 'Turn on';
 }
 
 async function setPower(on) {
@@ -333,26 +333,26 @@ function renderStage() {
     problem.hidden = true;
     btn.hidden = true;
     if (v.view === 'busy') {
-      title.textContent = state.pending === 'starting' ? 'Switching on…' : 'Switching off…';
+      title.textContent = state.pending === 'starting' ? 'Turning on…' : 'Turning off…';
       sub.textContent = state.pending === 'starting' ? 'Getting ready for your TV.' : 'One moment.';
     } else if (v.view === 'problem') {
-      title.textContent = 'HomeFlix couldn’t switch on';
+      title.textContent = 'HomeFlix couldn’t turn on';
       sub.textContent = '';
       const err = state.startError || { code: 'error', message: s.error };
       const portBusy = err.code === 'port_in_use';
       const port = s.config.port;
       $('stage-problem-text').textContent = portBusy
-        ? `Another app on this Mac is already using port ${port}, and the next few numbers are taken too. Choose a different port number in Settings, for example ${port >= 8000 && port < 60000 ? port + 800 : 8888}, then switch on again.`
-        : `${err.message} Try switching on again. If it keeps happening, close HomeFlix and open it again.`;
+        ? `Another app on this Mac is already using port ${port}, and the next few numbers are taken too. Choose a different port number in Settings, for example ${port >= 8000 && port < 60000 ? port + 800 : 8888}, then turn HomeFlix on again.`
+        : `${err.message} Try turning it on again. If it keeps happening, close HomeFlix and open it again.`;
       $('stage-problem-fix').hidden = !portBusy;
       problem.hidden = false;
       btn.hidden = false;
       btn.textContent = 'Try again';
     } else {
       title.textContent = `${s.name} is off`;
-      sub.textContent = 'Switch it on and your TV can play the videos and photos on this Mac. Everything stays on your home Wi-Fi.';
+      sub.textContent = 'Turn it on to connect your TV and play the videos and photos on this Mac. Everything stays on your home Wi-Fi.';
       btn.hidden = false;
-      btn.textContent = 'Switch on';
+      btn.textContent = 'Turn on';
     }
     return;
   }
@@ -467,6 +467,13 @@ function renderLibraryHead() {
     ? 'No videos or photos yet.'
     : `${plural(videos, 'video', 'videos')}, ${plural(photos, 'photo', 'photos')}, ${fmtBytes(bytes)} in total`;
   $('scanning').hidden = !s.scanning;
+  // A missing or unreadable folder is its own notice; it has nothing to do with on/off.
+  const libErr = s.libraryError || '';
+  const advice = 'If it is on an external drive, plug the drive back in and it will come back by itself. Otherwise choose another folder under Folders.';
+  $('lib-error').hidden = !libErr;
+  $('lib-error-text').textContent = libErr ? `${libErr} ${advice}` : '';
+  $('fold-error').hidden = !libErr;
+  $('fold-error').textContent = libErr ? `${libErr} Reconnect the drive, or use Change… or Remove below.` : '';
   $('ffmpeg-hint').hidden = s.tools.ffmpeg || store('homeflix.ffmpegHint') === 'hidden';
 }
 
@@ -749,17 +756,17 @@ async function onJobClick(e) {
   const btn = e.target.closest('[data-job]');
   if (!btn) return;
   const id = btn.closest('.row').dataset.id;
-  if (btn.dataset.job === 'hide') {
-    state.hiddenJobs.add(id);
-    renderJobs();
-    return;
-  }
+  const dismiss = btn.dataset.job === 'hide';
   btn.disabled = true;
   try {
     await api('DELETE', `/api/jobs/${id}`);
     state.hiddenJobs.add(id);
-    toast('Conversion cancelled.');
-  } catch (err) { toast(err.message, true); }
+    if (!dismiss) toast('Conversion cancelled.');
+  } catch (err) {
+    // A failed job that the server has already forgotten is as good as dismissed.
+    if (dismiss && err.status === 404) state.hiddenJobs.add(id);
+    else toast(err.message, true);
+  }
   pollJobs(true);
 }
 

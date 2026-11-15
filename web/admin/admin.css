@@ -171,7 +171,9 @@ select {
 }
 .callout.bad { border-left-color: var(--bad); }
 .callout.warn { border-left-color: var(--warn); }
-.callout .btn { margin-top: 10px; }
+.callout .btn { margin-top: 10px; display: inline-block; text-decoration: none; }
+.callout.wide { max-width: none; margin-bottom: 16px; }
+#fold-error { margin-bottom: 20px; }
 
 .spin {
   display: inline-block; width: 12px; height: 12px; margin-right: 8px;
