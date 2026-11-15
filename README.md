@@ -25,18 +25,18 @@ and the "Convert" button for videos your TV cannot play. Install it with
 2. **Add your media.** Drag videos and photos onto the Library area of the
    control panel, or point HomeFlix at a folder you already have (Folders →
    Add folder…).
-3. **Switch on and watch.** Flip the big switch to **ON**. On your TV, open the
+3. **Turn on and watch.** Turn HomeFlix **ON** with the big button. On your TV, open the
    web browser and type the address shown on the card, for example
    `http://192.168.0.106:8080`. On a phone or tablet, scan the QR code instead.
 
 If macOS asks "Do you want the application 'node' to accept incoming network
 connections?", choose **Allow**. Without it the TV cannot reach the Mac.
 
-To stop, flip the switch to OFF. To quit HomeFlix completely, close the
+To stop, turn it OFF. To quit HomeFlix completely, close the
 Terminal window (or press `Ctrl+C` in it).
 
 Prefer the command line? `npm start` does the same as the launcher.
-`npm run serve` also switches the TV server on straight away.
+`npm run serve` also turns the TV server on straight away.
 
 ## Using the TV app
 
@@ -57,7 +57,7 @@ Tip: bookmark the address in the TV browser so you only type it once.
 Everything is in the control panel (`http://localhost:7788`, only reachable
 from the Mac itself):
 
-- **ON/OFF switch** — whether the TV can reach your library right now.
+- **Turn on / Turn off** — whether the TV can reach your library right now.
 - **Connect your TV** — the address, a QR code, and the TVs currently connected.
 - **Library** — upload, preview, convert, show in Finder, move to Trash.
 - **Folders** — where uploads are saved, and other folders to include.
@@ -115,15 +115,15 @@ TV browsers are slower and stricter than a laptop's. Good to know:
   refused. It is not reachable from the internet unless you deliberately
   forward the port on your router — don't.
 - Anyone on your Wi-Fi who knows the address can view the library while the
-  switch is ON. Switch it OFF when you are done, and avoid public Wi-Fi.
-- The TV app can only read. Uploading, deleting and settings are possible
+  server is ON. Turn it OFF when you are done, and avoid public Wi-Fi.
+- The TV app can only read (it saves nothing but where you stopped watching). Uploading, deleting and settings are possible
   only from the Mac itself.
 - No accounts, no analytics, no internet connection needed.
 
 ## Troubleshooting
 
 **The TV says the page can't be reached**
-1. Is the switch ON? Is the Terminal window still open?
+1. Is HomeFlix turned ON? Is the Terminal window still open?
 2. Are the TV and Mac on the same Wi-Fi name? "Guest" networks and some mesh
    or hotel networks stop devices from talking to each other.
 3. Did you allow incoming connections for "node"? Check System Settings →

@@ -65,7 +65,7 @@ Item = {
   hasSubs: boolean,      // sidecar .srt/.vtt with the same base name exists
   writable: boolean,     // true when inside libraryFolder (may be deleted)
   src: string,           // "/media/<id>"
-  thumb: string,         // "/thumb/<id>"
+  thumb: string,         // "/thumb/<id>?v=<mtime>" (cache-busting; append "&w=960" etc. for a larger size)
   progress: { position: number, duration: number, updatedAt: number } | null
 }
 ```
@@ -99,7 +99,7 @@ thumbnails and resized photos with `max-age=86400`.
 | GET | `/api/ping` | `{ ok: true, name, version }` |
 | GET | `/api/library` | `{ name, version, generatedAt, videos: Item[], photos: Item[], collections: [{ name, videos, photos }], continueWatching: Item[], recent: Item[] }` |
 | GET | `/media/<id>` | the original file. `Accept-Ranges: bytes`, honours `Range` (206, 416), correct `Content-Type`, `HEAD` supported |
-| GET | `/thumb/<id>` | JPEG ~480px wide (videos: frame at ~10% in; photos: resized). When it cannot be made: `200` SVG placeholder, never an error |
+| GET | `/thumb/<id>?w=480` | JPEG, longest side `w` snapped to 480 (default), 960 or 1280; use 1280 for full-screen backdrops. `v` is ignored. JPEG ~480px wide by default (videos: frame at ~10% in; photos: resized). When it cannot be made: `200` SVG placeholder, never an error |
 | GET | `/photo/<id>?w=1920` | JPEG no wider/taller than `w` (clamped 320–3840, default 1920), EXIF-rotated. Falls back to the original when `sips` is missing and the type is browser-native |
 | GET | `/subs/<id>.vtt` | sidecar subtitles as WebVTT (`.srt` converted on the fly), `404` when none |
 | PUT | `/api/progress/<id>` | body `{ position, duration }` seconds. `204`. Positions under 30s or within the last 5% clear the entry (treated as not started / finished) |
@@ -145,7 +145,8 @@ Status = {
   tools: { ffmpeg: boolean, sips: boolean },
   scanning: boolean,
   clients: [{ address: string, lastSeen: number, userAgent: string }], // TVs seen in the last 2 min
-  error: string|null           // last start-up problem, plain language
+  error: string|null,          // last problem turning the TV server on, plain language
+  libraryError: string|null    // a library or extra folder is missing/unreadable; independent of on/off
 }
 ```
 
@@ -192,7 +193,9 @@ Concept: **a projector in a dark room** — warm light on deep ink.
 
 ## TV app behaviour (`web/tv/`)
 
-One page, hash-routed, ES5 only, no dependencies, under ~60KB total.
+One page, hash-routed, ES5 only, no dependencies, under ~100KB total.
+Also usable on a phone or tablet (people scan the QR code): layout adapts to
+narrow and portrait screens and to touch.
 
 - **Home**: hero banner for the featured item (first of Continue Watching,
   else newest video), then rows: Continue Watching, Recently Added, one row per
@@ -271,3 +274,9 @@ Behaviour settled while building, binding like the rest of this file:
   `HOMEFLIX_BIND=127.0.0.1`, `--verbose`, `--help`.
 - Unknown non-file paths return the app's `index.html`; unknown `/api/*` is
   JSON `404`.
+- `/photo` widths snap to 640, 1280, 1920, 2560 or 3840 so the cache stays
+  bounded.
+- The TV server only answers when `Host` is an IP literal, `localhost` or a
+  `.local` name (blocks DNS rebinding). The control server only accepts
+  writes whose `Origin`, when present, is its own origin.
+- User-facing wording is "Turn on" / "Turn off", never "switch on".
